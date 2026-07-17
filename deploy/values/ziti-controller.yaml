@@ -1,0 +1,23 @@
+# OpenZiti controller (values ported from bootstrap stacks/deps). The advertised
+# host:port is baked into enrollment JWTs, so INGRESS_HOST_PORT must equal the
+# host port Lima forwards for external clients; in-cluster clients reach it via
+# the coredns-custom rewrites.
+cluster:
+  mode: standalone
+clientApi:
+  advertisedHost: ziti.{{BASE_DOMAIN}}
+  advertisedPort: {{INGRESS_HOST_PORT}}
+  service:
+    enabled: true
+    type: ClusterIP
+managementApi:
+  advertisedHost: ziti-mgmt.{{BASE_DOMAIN}}
+  advertisedPort: {{INGRESS_HOST_PORT}}
+  service:
+    enabled: true
+    type: ClusterIP
+persistence:
+  enabled: true
+  size: 2Gi
+useCustomAdminSecret: true
+customAdminSecretName: ziti-controller-admin

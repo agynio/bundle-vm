@@ -1,0 +1,18 @@
+fullnameOverride: openfga
+replicaCount: 1
+datastore:
+  engine: postgres
+  uri: postgresql://openfga:openfga@openfga-db:5432/openfga?sslmode=disable
+  applyMigrations: true
+  waitForMigrations: true
+  migrationType: initContainer
+postgresql:
+  enabled: false
+grpc:
+  addr: 0.0.0.0:8081
+http:
+  enabled: true
+  addr: 0.0.0.0:8080
+playground:
+  enabled: true
+  port: 3000

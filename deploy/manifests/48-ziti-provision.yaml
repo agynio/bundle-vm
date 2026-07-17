@@ -1,0 +1,236 @@
+# One-shot provisioning of the OpenZiti fabric (ported from bootstrap
+# stacks/ziti, which uses the Terraform ziti provider). A single container with
+# the ziti CLI creates the edge router, identities, services, intercept configs,
+# and policies, then stores the enrollment JWTs as the Kubernetes secrets the
+# router chart and platform expect (via the API with curl; the controller image
+# ships curl + jq). Idempotent: pending enrollment JWTs are recovered from the
+# controller, so re-runs and container restarts are safe.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ziti-provision
+  namespace: ziti
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ziti-provision-secrets
+  namespace: ziti
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ziti-provision-secrets
+  namespace: platform
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ziti-provision-secrets
+  namespace: ziti
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ziti-provision-secrets
+subjects:
+  - kind: ServiceAccount
+    name: ziti-provision
+    namespace: ziti
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ziti-provision-secrets
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ziti-provision-secrets
+subjects:
+  - kind: ServiceAccount
+    name: ziti-provision
+    namespace: ziti
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ziti-provision-script
+  namespace: ziti
+data:
+  provision.sh: |
+    #!/bin/sh
+    set -eu
+    export HOME=/tmp
+
+    K8S=https://kubernetes.default.svc
+    SA=/var/run/secrets/kubernetes.io/serviceaccount
+    TOKEN="$(cat "$SA/token")"
+
+    k8s() { # method path [json]
+      method="$1"; path="$2"; body="${3:-}"
+      if [ -n "$body" ]; then
+        curl -sS --cacert "$SA/ca.crt" -H "Authorization: Bearer $TOKEN" \
+          -H 'Content-Type: application/json' -X "$method" \
+          -o /dev/null -w '%{http_code}' -d "$body" "$K8S$path"
+      else
+        curl -sS --cacert "$SA/ca.crt" -H "Authorization: Bearer $TOKEN" \
+          -X "$method" -o /dev/null -w '%{http_code}' "$K8S$path"
+      fi
+    }
+
+    secret_exists() { # namespace name
+      [ "$(k8s GET "/api/v1/namespaces/$1/secrets/$2")" = "200" ]
+    }
+
+    store_secret() { # namespace name jwt
+      body="$(jq -n --arg name "$2" --arg jwt "$3" \
+        '{apiVersion:"v1",kind:"Secret",metadata:{name:$name},type:"Opaque",stringData:{enrollmentJwt:$jwt}}')"
+      code="$(k8s POST "/api/v1/namespaces/$1/secrets" "$body")"
+      case "$code" in
+      201 | 409) echo "[ziti-provision] secret $1/$2: $code" ;;
+      *)
+        echo "[ziti-provision] failed to create secret $1/$2: HTTP $code" >&2
+        return 1
+        ;;
+      esac
+    }
+
+    echo "[ziti-provision] waiting for management API"
+    i=0
+    until ziti edge login "https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/edge/management/v1" \
+        -u "$ZITI_ADMIN_USER" -p "$ZITI_ADMIN_PASSWORD" -y >/dev/null 2>&1; do
+      i=$((i + 1))
+      [ "$i" -gt 120 ] && echo "management API never became ready" >&2 && exit 1
+      sleep 5
+    done
+    echo "[ziti-provision] logged in"
+
+    exists() { # type name
+      ziti edge list "$1" "name=\"$2\"" -j | jq -e --arg n "$2" '.data[] | select(.name == $n)' >/dev/null
+    }
+
+    # Edge router; its (pending) enrollment JWT lands in ziti-router-enrollment.
+    exists edge-routers edge-router-1 || \
+      ziti edge create edge-router edge-router-1 --role-attributes public,all
+    if ! secret_exists ziti ziti-router-enrollment; then
+      jwt="$(ziti edge list edge-routers 'name="edge-router-1"' -j | jq -r '.data[0].enrollmentJwt // empty')"
+      if [ -n "$jwt" ]; then
+        store_secret ziti ziti-router-enrollment "$jwt"
+      else
+        echo "[ziti-provision] router already enrolled; no JWT to store"
+      fi
+    fi
+
+    # Identities (bootstrap parity). ziti-management is the only admin; its JWT
+    # is consumed by the platform's ziti-management self-enrollment.
+    ensure_identity() { # name secret-namespace secret-name extra-args...
+      name="$1"; secret_ns="$2"; secret_name="$3"
+      shift 3
+      exists identities "$name" || ziti edge create identity "$name" "$@"
+      secret_exists "$secret_ns" "$secret_name" && return 0
+      jwt="$(ziti edge list identities "name=\"$name\"" -j | jq -r '.data[0].enrollment.ott.jwt // empty')"
+      if [ -n "$jwt" ]; then
+        store_secret "$secret_ns" "$secret_name" "$jwt"
+      else
+        echo "[ziti-provision] identity $name already enrolled; no JWT to store"
+      fi
+    }
+
+    ensure_identity ziti-management platform ziti-management-enrollment --admin
+    ensure_identity gateway ziti ziti-gateway-enrollment --role-attributes gateway-hosts
+    ensure_identity orchestrator ziti ziti-orchestrator-enrollment --role-attributes orchestrators
+    ensure_identity egress-gateway ziti ziti-egress-gateway-enrollment --role-attributes egress-gateway-hosts
+
+    # Intercept configs + services.
+    exists configs gateway-intercept-v1 || \
+      ziti edge create config gateway-intercept-v1 intercept.v1 \
+        '{"addresses":["gateway.ziti"],"protocols":["tcp"],"portRanges":[{"low":443,"high":443}]}'
+    exists configs llm-proxy-intercept-v1 || \
+      ziti edge create config llm-proxy-intercept-v1 intercept.v1 \
+        '{"addresses":["llm-proxy.ziti"],"protocols":["tcp"],"portRanges":[{"low":80,"high":80}]}'
+    exists configs tracing-intercept-v1 || \
+      ziti edge create config tracing-intercept-v1 intercept.v1 \
+        '{"addresses":["tracing.ziti"],"protocols":["tcp"],"portRanges":[{"low":443,"high":443}]}'
+    exists services gateway || \
+      ziti edge create service gateway --configs gateway-intercept-v1 --role-attributes gateway
+    exists services llm-proxy || \
+      ziti edge create service llm-proxy --configs llm-proxy-intercept-v1 --role-attributes llm-proxy
+    exists services tracing || \
+      ziti edge create service tracing --configs tracing-intercept-v1 --role-attributes tracing
+
+    # Service policies (bootstrap stacks/ziti parity).
+    sp() { # name type identity-roles service-roles
+      exists service-policies "$1" || \
+        ziti edge create service-policy "$1" "$2" --identity-roles "$3" --service-roles "$4"
+    }
+    sp agents-dial-gateway Dial '#agents' '@gateway'
+    sp orchestrators-dial-runners Dial '#orchestrators' '#runner-services'
+    sp terminal-proxy-dial-runners Dial '#terminal-proxy-hosts' '#runner-services'
+    sp gateway-bind Bind '#gateway-hosts' '@gateway'
+    sp llm-proxy-bind Bind '#llm-proxy-hosts' '@llm-proxy'
+    sp egress-gateway-bind Bind '#egress-gateway-hosts' '#egress-services'
+    sp agents-dial-llm-proxy Dial '#agents' '@llm-proxy'
+    sp tracing-bind Bind '#tracing-hosts' '@tracing'
+    sp agents-dial-tracing Dial '#agents' '@tracing'
+    sp runners-bind Bind '#runners' '#runner-services'
+    sp apps-dial-gateway Dial '#apps' '@gateway'
+    sp apps-bind Bind '#apps' '#app-services'
+    sp gateway-dial-apps Dial '#gateway-hosts' '#app-services'
+    sp runners-service-dial-runners Dial '#runners-service-hosts' '#runner-services'
+
+    exists edge-router-policies all-identities-all-routers || \
+      ziti edge create edge-router-policy all-identities-all-routers \
+        --identity-roles '#all' --edge-router-roles '#all'
+    exists service-edge-router-policies all-services-all-routers || \
+      ziti edge create service-edge-router-policy all-services-all-routers \
+        --service-roles '#all' --edge-router-roles '#all'
+
+    echo "[ziti-provision] fabric provisioned and secrets stored"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ziti-provision
+  namespace: ziti
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: ziti-provision
+    spec:
+      serviceAccountName: ziti-provision
+      restartPolicy: OnFailure
+      containers:
+        - name: provision
+          # Same image as the deployed controller (guaranteed present, ships
+          # the matching ziti CLI plus curl and jq).
+          image: openziti/ziti-controller:2.0.0-pre10
+          command: ["/bin/sh", "/scripts/provision.sh"]
+          env:
+            - name: ZITI_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ziti-controller-admin
+                  key: admin-user
+            - name: ZITI_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ziti-controller-admin
+                  key: admin-password
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: ziti-provision-script
+            defaultMode: 0o755

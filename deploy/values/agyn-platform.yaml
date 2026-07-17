@@ -1,0 +1,119 @@
+# The entire Agyn platform as ONE helm release, from the unified agyn-platform
+# umbrella chart (oci://ghcr.io/agynio/charts/agyn-platform).
+#
+# Values are a local port of the canonical contract file
+# infrastructure/terraform/components/platform/values/agyn-platform.yaml.tftpl.
+# Local substitutions: in-cluster MinIO for S3, in-cluster OpenFGA, bootstrap
+# mockauth.dev dev OIDC issuer.
+
+# The chart's lookup-based secret contract check requires cluster access at
+# render time; secrets are consumed at runtime via secretKeyRef.
+validation:
+  requireExistingSecrets: false
+
+# Umbrella-level contract values.
+s3:
+  existingSecret: agyn-files-s3
+  endpoint: minio.minio.svc.cluster.local:9000
+  bucket: agyn-files
+  region: us-east-1
+  useSSL: false
+  forcePathStyle: true
+
+openfga:
+  apiUrl: http://openfga.openfga.svc.cluster.local:8080
+  storeId: ""
+  modelId: ""
+
+# OIDC (bootstrap dev defaults: public mockauth.dev mock issuer).
+platform:
+  oidc:
+    issuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
+    clientId: client_MU95KU3gHQf5Ir7p
+    audience: ""
+
+gateway:
+  gateway:
+    oidcIssuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
+    oidcClientId: client_MU95KU3gHQf5Ir7p
+    oidcAudience: ""
+
+console-app:
+  oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
+  oidcClientId: client_4XUh4_1VfUzpfYkN
+  oidcResource: ""
+
+chat-app:
+  oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
+  oidcClientId: client_MU95KU3gHQf5Ir7p
+  oidcResource: ""
+  origin: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+  mediaProxyUrl: https://media.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+
+tracing-app:
+  oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
+  oidcClientId: client_tzqVFAYTvpkfUzy5
+  oidcResource: ""
+
+media-proxy:
+  mediaProxy:
+    oidcIssuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
+    oidcClientId: client_MU95KU3gHQf5Ir7p
+    oidcAudience: ""
+    corsAllowedOrigin: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+
+# Event bus.
+nats:
+  enabled: true
+
+# bitnami redis: pin by digest (the chart defaults to tag "latest"; bitnami no
+# longer publishes versioned free tags) and disable auth (NOAUTH errors
+# otherwise). NOTE: these two used to live in separate blocks and the second
+# silently overrode the first — keep them merged.
+notifications-redis:
+  image:
+    digest: sha256:341edafd5622a1e47e4b3ab379913de84ea4a50d534f40aaa903a3825e0e1cf1
+  auth:
+    enabled: false
+
+authorization:
+  # authorization's migration Job provisions the OpenFGA store/model and
+  # writes their IDs into the authorization-openfga secret.
+  openfgaApiUrl: http://openfga.openfga.svc.cluster.local:8080
+
+files:
+  securityContext:
+    runAsUser: 65532
+    runAsGroup: 65532
+  files:
+    s3:
+      endpoint: minio.minio.svc.cluster.local:9000
+      bucket: agyn-files
+      region: us-east-1
+      useSSL: false
+
+# OpenZiti-backed services. ziti-management self-enrolls with the JWT from the
+# ziti-management-enrollment secret (ziti-provision Job); runners/orchestrator/
+# gateway then self-enroll via ziti-management.
+ziti-management:
+  zitiControllerUrl: https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/edge/management/v1
+
+egress:
+  enabled: true
+
+# --- Disabled services --------------------------------------------
+# egress-gateway matches bootstrap parity (its ziti identity secret has no
+# provisioning path yet); groups/networks are off by default in the umbrella;
+# expose/ncps/registryMirror are optional infra.
+egress-gateway:
+  enabled: false
+networks:
+  enabled: false
+groups:
+  enabled: false
+expose:
+  enabled: false
+ncps:
+  enabled: false
+registryMirror:
+  enabled: false

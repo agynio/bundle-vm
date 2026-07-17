@@ -1,0 +1,6 @@
+.packer.d/
+artifacts/
+output/
+*.log
+*.qcow2
+*.qcow2.xz

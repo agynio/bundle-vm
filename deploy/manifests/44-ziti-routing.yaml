@@ -1,0 +1,85 @@
+# TLS-passthrough ingress for OpenZiti (ported from bootstrap stacks/routing).
+# Ziti does its own mTLS, so the Istio gateway passes these SNI hosts through
+# untouched on the same 443 listener the SIMPLE platform-gateway uses.
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: ziti-passthrough-gateway
+  namespace: istio-gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 443
+        name: tls-ziti
+        protocol: TLS
+      tls:
+        mode: PASSTHROUGH
+      hosts:
+        - "ziti.{{BASE_DOMAIN}}"
+        - "ziti-mgmt.{{BASE_DOMAIN}}"
+        - "ziti-router.{{BASE_DOMAIN}}"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: ziti-controller
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "ziti.{{BASE_DOMAIN}}"
+  gateways:
+    - ziti-passthrough-gateway
+  tls:
+    - match:
+        - port: 443
+          sniHosts:
+            - "ziti.{{BASE_DOMAIN}}"
+      route:
+        - destination:
+            host: ziti-controller-client.ziti.svc.cluster.local
+            port:
+              number: {{INGRESS_HOST_PORT}}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: ziti-controller-mgmt
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "ziti-mgmt.{{BASE_DOMAIN}}"
+  gateways:
+    - ziti-passthrough-gateway
+  tls:
+    - match:
+        - port: 443
+          sniHosts:
+            - "ziti-mgmt.{{BASE_DOMAIN}}"
+      route:
+        - destination:
+            host: ziti-controller-mgmt.ziti.svc.cluster.local
+            port:
+              number: {{INGRESS_HOST_PORT}}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: ziti-router
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "ziti-router.{{BASE_DOMAIN}}"
+  gateways:
+    - ziti-passthrough-gateway
+  tls:
+    - match:
+        - port: 443
+          sniHosts:
+            - "ziti-router.{{BASE_DOMAIN}}"
+      route:
+        - destination:
+            host: ziti-router-edge.ziti.svc.cluster.local
+            port:
+              number: {{INGRESS_HOST_PORT}}

@@ -1,0 +1,80 @@
+# Istio routing for the data layer, bound to the base image's platform-gateway.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: minio
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "minio.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: minio-console.minio.svc.cluster.local
+            port:
+              number: 9001
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: minio-api
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "minio-api.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: minio.minio.svc.cluster.local
+            port:
+              number: 9000
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: openfga
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "openfga.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: openfga.openfga.svc.cluster.local
+            port:
+              number: 8080
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: openfga-playground
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "openfga-playground.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: openfga.openfga.svc.cluster.local
+            port:
+              number: 3000

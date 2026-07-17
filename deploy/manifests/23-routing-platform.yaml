@@ -1,0 +1,182 @@
+# Platform UI/API routing (ported from bootstrap stacks/platform
+# VirtualServices). UIs route /api and /socket.io to the gateway service and
+# everything else to the app itself.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: console-app
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "console.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/
+        - uri:
+            exact: /api
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: gateway.platform.svc.cluster.local
+            port:
+              number: 8080
+    - match:
+        - uri:
+            prefix: /socket.io
+      route:
+        - destination:
+            host: gateway.platform.svc.cluster.local
+            port:
+              number: 8080
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: console-app.platform.svc.cluster.local
+            port:
+              number: 3000
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: chat-app
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "chat.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/
+        - uri:
+            exact: /api
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: gateway.platform.svc.cluster.local
+            port:
+              number: 8080
+    - match:
+        - uri:
+            prefix: /socket.io
+      route:
+        - destination:
+            host: gateway.platform.svc.cluster.local
+            port:
+              number: 8080
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: chat-app.platform.svc.cluster.local
+            port:
+              number: 3000
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: tracing-app
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "tracing.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/
+        - uri:
+            exact: /api
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: gateway.platform.svc.cluster.local
+            port:
+              number: 8080
+    - match:
+        - uri:
+            prefix: /socket.io
+      route:
+        - destination:
+            host: gateway.platform.svc.cluster.local
+            port:
+              number: 8080
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: tracing-app.platform.svc.cluster.local
+            port:
+              number: 3000
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gateway
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "gateway.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: gateway.platform.svc.cluster.local
+            port:
+              number: 8080
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: media-proxy
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "media.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: media-proxy.platform.svc.cluster.local
+            port:
+              number: 8080
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: llm-proxy
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "llm.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: llm-proxy.platform.svc.cluster.local
+            port:
+              number: 8080

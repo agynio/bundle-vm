@@ -1,0 +1,55 @@
+# Platform HTTPS gateway (SIMPLE TLS from the base image's wildcard cert).
+# Extends the base image's minimal host list to the full platform set — the
+# explicit list prevents SIMPLE TLS from shadowing the Ziti PASSTHROUGH SNI
+# hosts on the same 443 listener (see bootstrap stacks/routing).
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: platform-gateway
+  namespace: istio-gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE
+        credentialName: wildcard-agyn-dev-tls
+      hosts:
+        - "{{BASE_DOMAIN}}"
+        - "argocd.{{BASE_DOMAIN}}"
+        - "chat.{{BASE_DOMAIN}}"
+        - "console.{{BASE_DOMAIN}}"
+        - "gateway.{{BASE_DOMAIN}}"
+        - "llm.{{BASE_DOMAIN}}"
+        - "media.{{BASE_DOMAIN}}"
+        - "minio.{{BASE_DOMAIN}}"
+        - "minio-api.{{BASE_DOMAIN}}"
+        - "openfga.{{BASE_DOMAIN}}"
+        - "openfga-playground.{{BASE_DOMAIN}}"
+        - "tracing.{{BASE_DOMAIN}}"
+---
+# Argo CD route (also present on the base image; reasserted here so the platform
+# image is self-contained).
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: argocd
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "argocd.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: argocd-server.argocd.svc.cluster.local
+            port:
+              number: 80

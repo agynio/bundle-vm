@@ -1,0 +1,7 @@
+# trust-manager distributes the OpenZiti controller trust bundle (required by
+# the ziti-controller chart). cert-manager itself is provided by the base image.
+crds:
+  keep: false
+app:
+  trust:
+    namespace: ziti
