@@ -46,13 +46,18 @@ helm upgrade --install istio-base istio/base --version "${ISTIO_VERSION}" \
 	-n istio-system --wait --timeout 15m
 
 log "istiod ${ISTIO_VERSION}"
+# The chart reserves 500m/2Gi for pilot by default, sized for a large mesh.
+# This VM runs a single node, where that reservation alone is a quarter of the
+# schedulable memory while pilot actually uses well under 100Mi.
 helm upgrade --install istiod istio/istiod --version "${ISTIO_VERSION}" \
 	-n istio-system --wait --timeout 15m \
 	--set meshConfig.ingressControllerMode=STRICT \
 	--set meshConfig.ingressClass=istio \
 	--set meshConfig.ingressService=istio-ingressgateway \
 	--set meshConfig.ingressServiceNamespace=istio-gateway \
-	--set pilot.traceSampling=1.0
+	--set pilot.traceSampling=1.0 \
+	--set pilot.resources.requests.cpu=100m \
+	--set pilot.resources.requests.memory=256Mi
 
 log "istio ingress gateway ${ISTIO_VERSION} (NodePort ${INGRESS_NODEPORT})"
 cat >/tmp/gw-values.yaml <<EOF
