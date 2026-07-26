@@ -111,8 +111,25 @@ spec:
                 sleep 5
               done
 
+              # --- Organization (needed for the LLM model below; the runner
+              # itself stays cluster-scoped, matching bootstrap).
+              echo "[apps-provision] resolving platform organization"
+              ORG_ID="$(gw agynio.api.gateway.v1.OrganizationsGateway/ListOrganizations '{}' \
+                | jq -r '(.organizations // [])[] | select((.name // "") == "platform") | (.meta.id // .id) // empty' | head -1)"
+              if [ -z "$ORG_ID" ]; then
+                CREATED="$(gw agynio.api.gateway.v1.OrganizationsGateway/CreateOrganization '{"name":"platform"}')"
+                ORG_ID="$(echo "$CREATED" | jq -r '.organization.meta.id // .organization.id // empty')"
+              fi
+              if [ -z "$ORG_ID" ]; then
+                echo "[apps-provision] could not resolve organization" >&2
+                exit 1
+              fi
+              echo "[apps-provision] organization: $ORG_ID"
+
               if [ "$(k8s_get /api/v1/namespaces/platform/secrets/k8s-runner-service-token)" != "200" ]; then
                 echo "[apps-provision] registering k8s-runner"
+                # Cluster-scoped (no organizationId), matching bootstrap's
+                # agyn_runner resource.
                 REG="$(gw agynio.api.gateway.v1.RunnersGateway/RegisterRunner \
                   '{"name":"k8s-runner","labels":{"type":"kubernetes"},"capabilities":["docker"]}')"
                 SERVICE_TOKEN="$(echo "$REG" | jq -r '.serviceToken // empty')"
@@ -133,22 +150,9 @@ spec:
                 esac
               fi
 
-              # --- Organization + LLM provider/model (bootstrap stacks/apps +
-              # e2e CI parity). The provider endpoint is a placeholder: agents
-              # need the model row to exist, not to answer completions.
-              echo "[apps-provision] resolving platform organization"
-              ORG_ID="$(gw agynio.api.gateway.v1.OrganizationsGateway/ListOrganizations '{}' \
-                | jq -r '(.organizations // [])[] | select((.name // "") == "platform") | (.meta.id // .id) // empty' | head -1)"
-              if [ -z "$ORG_ID" ]; then
-                CREATED="$(gw agynio.api.gateway.v1.OrganizationsGateway/CreateOrganization '{"name":"platform"}')"
-                ORG_ID="$(echo "$CREATED" | jq -r '.organization.meta.id // .organization.id // empty')"
-              fi
-              if [ -z "$ORG_ID" ]; then
-                echo "[apps-provision] could not resolve organization" >&2
-                exit 1
-              fi
-              echo "[apps-provision] organization: $ORG_ID"
-
+              # --- LLM provider/model (e2e CI parity). The provider endpoint is
+              # a placeholder: agents need the model row to exist, not to answer
+              # completions.
               echo "[apps-provision] resolving LLM model"
               MODEL_ID="$(gw agynio.api.gateway.v1.LLMGateway/ListModels \
                 "{\"organizationId\":\"$ORG_ID\",\"llmProviderId\":\"\",\"pageSize\":200,\"pageToken\":\"\"}" \

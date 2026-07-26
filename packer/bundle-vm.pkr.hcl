@@ -147,6 +147,12 @@ build {
     destination = "/tmp"
   }
 
+  # Runs on first boot with a token the host generated, not at build time.
+  provisioner "file" {
+    source      = "${path.root}/../scripts/set-bootstrap-token.sh"
+    destination = "/tmp/set-bootstrap-token.sh"
+  }
+
   provisioner "shell" {
     environment_vars = [
       "ARCH=${var.arch}",
@@ -156,6 +162,7 @@ build {
     ]
     execute_command = "{{ .Vars }}sudo -E bash '{{ .Path }}'"
     scripts = [
+      "${path.root}/../scripts/install-bootstrap-token-hook.sh",
       "${path.root}/../scripts/install-ingress.sh",
       "${path.root}/../scripts/install-platform.sh",
       "${path.root}/../scripts/prepull-and-wait.sh",

@@ -37,13 +37,88 @@ gateway:
     oidcIssuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
     oidcClientId: client_MU95KU3gHQf5Ir7p
     oidcAudience: ""
-    # Static dev cluster-admin bearer token (bootstrap parity: terraform's
-    # random cluster_admin_token, fixed here for the local bundle). Used by
-    # the apps-provision Job and by e2e as AGYN_API_TOKEN. The identity UUID
-    # matches bootstrap's cluster_admin_identity_id constant; the matching
-    # OpenFGA admin tuple is written by the apps-provision Job.
-    clusterAdminToken: agyn-local-cluster-admin-token
+    # Build-time bootstrap token, used by the apps-provision Job while the
+    # image is built. It is replaced on first boot by one the host generates
+    # for that install (scripts/set-bootstrap-token.sh), because a token baked
+    # into the image is identical on every machine running that version and
+    # cannot be rotated. The identity UUID matches bootstrap's
+    # cluster_admin_identity_id constant; the matching OpenFGA admin tuple is
+    # written by the apps-provision Job.
+    # Read from a Secret so the host can supply a token for this install
+    # without the value living in the Deployment spec. The image ships a
+    # placeholder the build's own provisioning uses; `agyn local start`
+    # replaces it per install.
+    clusterAdminTokenSecret:
+      name: gateway-bootstrap-token
+      key: token
     clusterAdminIdentityId: a3c1e9d2-7f4b-5e1a-9c3d-2b8f6a4e7d10
+
+# OpenZiti must be switched on explicitly — ZITI_ENABLED defaults to false in
+# these charts, and bootstrap (stacks/platform) sets it to "true". Without it
+# the orchestrator builds no ziti-management client, so createIdentity()
+# returns nil silently: agent workloads get no OpenZiti identity and no tunnel
+# sidecar, then die with "name resolver error: produced zero addresses" trying
+# to reach gateway.ziti.
+#
+# NOTE: `env` REPLACES a subchart's default list (documented in the umbrella
+# chart's own values.yaml), and the umbrella already replaces the
+# agents-orchestrator list with three entries — dropping every Ziti/agent
+# address the subchart shipped. The full list is restored here.
+agents-orchestrator:
+  env:
+    - name: THREADS_ADDRESS
+      value: "threads:50051"
+    - name: NOTIFICATIONS_ADDRESS
+      value: "notifications:50051"
+    - name: AGENTS_ADDRESS
+      value: "agents:50051"
+    - name: SECRETS_ADDRESS
+      value: "secrets:50051"
+    - name: RUNNERS_ADDRESS
+      value: "runners:50051"
+    - name: METERING_SERVICE_ADDRESS
+      value: "metering:50051"
+    - name: METERING_SAMPLE_INTERVAL
+      value: "60s"
+    - name: ZITI_ENABLED
+      value: "true"
+    - name: ZITI_LEASE_RENEWAL_INTERVAL
+      value: "2m"
+    - name: ZITI_ENROLLMENT_TIMEOUT
+      value: "2m"
+    - name: ZITI_MANAGEMENT_ADDRESS
+      value: "ziti-management:50051"
+    - name: AGENT_GATEWAY_ADDRESS
+      value: "gateway.ziti:443"
+    - name: AGENT_TRACING_ADDRESS
+      value: "tracing.ziti:443"
+    - name: AGENT_LLM_BASE_URL
+      value: "http://llm-proxy.ziti/v1"
+    - name: ZITI_ENROLLMENT_CONTROLLER_RESOLVE_HOST
+      value: "ziti-controller-client.ziti.svc.cluster.local"
+    - name: ZITI_ENROLLMENT_CONTROLLER_PORT
+      value: "{{INGRESS_HOST_PORT}}"
+    - name: ZITI_RUNTIME_CONTROLLER_RESOLVE_HOST
+      value: "ziti-controller-client.ziti.svc.cluster.local"
+    - name: ZITI_RUNTIME_CONTROLLER_PORT
+      value: "{{INGRESS_HOST_PORT}}"
+    - name: POLL_INTERVAL
+      value: "5s"
+    - name: IDLE_TIMEOUT
+      value: "30s"
+    - name: EGRESS_CA_NAMESPACE
+      value: "platform"
+    - name: GROUP_SYNC_ENABLED
+      value: "true"
+    - name: GROUPS_ADDRESS
+      value: "groups:50051"
+    - name: NATS_URL
+      value: "nats://nats:4222"
+
+# llm-proxy exposes a proper toggle rather than a raw env entry.
+llm-proxy:
+  llmProxy:
+    zitiEnabled: true
 
 console-app:
   oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
@@ -102,16 +177,27 @@ files:
 # OpenZiti-backed services. ziti-management self-enrolls with the JWT from the
 # ziti-management-enrollment secret (ziti-provision Job); runners/orchestrator/
 # gateway then self-enroll via ziti-management.
+# The umbrella chart pins egress 0.1.1 and ziti-management 0.10.12, which
+# predate the OpenZiti provisioning fixes: 0.1.1 never creates the per-rule
+# OpenZiti service (attach then fails with "no services found with the given
+# ids"), and 0.10.12 emits an empty `address` alongside forwardAddress=true,
+# which Ziti rejects. Both are fixed in released images, so pin the newer tags
+# until the chart's dependency versions are bumped upstream.
 ziti-management:
   zitiControllerUrl: https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/edge/management/v1
+  image:
+    tag: 0.10.17
 
 egress:
   enabled: true
+  image:
+    tag: 0.1.3
 
 # --- Disabled services --------------------------------------------
 # egress-gateway matches bootstrap parity (its ziti identity secret has no
-# provisioning path yet); groups/networks are off by default in the umbrella;
+# provisioning path yet); networks is off (needs a newer ziti-management API);
 # expose/ncps/registryMirror are optional infra.
+
 egress-gateway:
   enabled: false
 # groups is a core dependency: users/apps/agents do group-sync against it, and
