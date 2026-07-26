@@ -10,6 +10,17 @@ images:
 
 mounts: []
 
+# Lima's built-in hostResolver proxies DNS for the guest, but it answers
+# non-existent names only after ~8s (and with NOERROR rather than NXDOMAIN).
+# Kubernetes generates failing lookups constantly — ndots:5 search-path
+# expansion, and Go gRPC's `_grpc_config.<service>` TXT probe on every cold
+# channel dial — so each one cost 8s and they stacked into 10-30s first-request
+# stalls. Disabling it makes Lima hand the host's real nameservers to the guest
+# over DHCP: negative answers come back in ~50ms, and split-horizon/VPN DNS
+# from the host works inside the cluster.
+hostResolver:
+  enabled: false
+
 ssh:
   localPort: 0
   loadDotSSHPubKeys: true

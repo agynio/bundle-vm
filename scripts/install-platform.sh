@@ -21,7 +21,9 @@ ZITI_ROUTER_VERSION=3.0.0-pre5
 POSTGRES_HELM_VERSION=0.1.1
 OPENFGA_VERSION=0.2.56
 MINIO_VERSION=5.4.0
+METERING_VERSION=0.1.3
 AGYN_PLATFORM_VERSION=0.5.10
+AGYN_APPS_VERSION=0.1.0
 
 log() { printf '[install-platform] %s\n' "$*"; }
 
@@ -88,12 +90,29 @@ helm upgrade --install minio minio/minio \
 	--version "${MINIO_VERSION}" -n minio \
 	--wait --timeout "${HELM_TIMEOUT}" -f "$(values minio)"
 
+# metering: its own release (not in the umbrella chart), on the shared Postgres.
+log "metering ${METERING_VERSION}"
+helm upgrade --install metering oci://ghcr.io/agynio/charts/metering \
+	--version "${METERING_VERSION}" -n platform \
+	--wait --timeout "${HELM_TIMEOUT}" -f "$(values metering)"
+
 # 6) The platform umbrella. No --wait: migrations and self-enrollment retry on
 #    their own schedules; prepull-and-wait.sh watches overall convergence.
 log "agyn-platform ${AGYN_PLATFORM_VERSION}"
 helm upgrade --install agyn-platform oci://ghcr.io/agynio/charts/agyn-platform \
 	--version "${AGYN_PLATFORM_VERSION}" -n platform \
 	-f "$(values agyn-platform)"
+
+# 7) Apps layer: wait for the apps-provision Job (admin tuple + k8s-runner
+#    registration + service-token secret, ported from bootstrap stacks/apps),
+#    then the agyn-apps umbrella (default k8s-runner).
+log "waiting for apps-provision job"
+kubectl -n platform wait --for=condition=complete job/apps-provision --timeout=20m
+
+log "agyn-apps ${AGYN_APPS_VERSION}"
+helm upgrade --install agyn-apps oci://ghcr.io/agynio/charts/agyn-apps \
+	--version "${AGYN_APPS_VERSION}" -n platform \
+	--wait --timeout "${HELM_TIMEOUT}" -f "$(values agyn-apps)"
 
 log "helm releases:"
 helm list -A

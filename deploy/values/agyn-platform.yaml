@@ -37,6 +37,13 @@ gateway:
     oidcIssuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
     oidcClientId: client_MU95KU3gHQf5Ir7p
     oidcAudience: ""
+    # Static dev cluster-admin bearer token (bootstrap parity: terraform's
+    # random cluster_admin_token, fixed here for the local bundle). Used by
+    # the apps-provision Job and by e2e as AGYN_API_TOKEN. The identity UUID
+    # matches bootstrap's cluster_admin_identity_id constant; the matching
+    # OpenFGA admin tuple is written by the apps-provision Job.
+    clusterAdminToken: agyn-local-cluster-admin-token
+    clusterAdminIdentityId: a3c1e9d2-7f4b-5e1a-9c3d-2b8f6a4e7d10
 
 console-app:
   oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
@@ -107,9 +114,16 @@ egress:
 # expose/ncps/registryMirror are optional infra.
 egress-gateway:
   enabled: false
-networks:
-  enabled: false
+# groups is a core dependency: users/apps/agents do group-sync against it, and
+# without it create-user/agent block ~30s on a downstream timeout. Needs its
+# database (shared Postgres + db-urls secret) and an arm64 image (upstream only
+# publishes amd64 — see the multi-arch note in the README).
 groups:
+  enabled: true
+# networks stays disabled: no e2e suite exercises it, and its current build
+# requires a newer ziti-management API (ListServicesByTag) than the pinned
+# chart provides.
+networks:
   enabled: false
 expose:
   enabled: false

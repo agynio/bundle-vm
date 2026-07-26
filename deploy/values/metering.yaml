@@ -1,0 +1,22 @@
+# metering service. Not part of the agyn-platform umbrella chart (bootstrap
+# deploys it as its own Argo CD app), so the bundle installs it as a separate
+# Helm release pointed at the shared Postgres. Internal gRPC only (:50051), no
+# ingress. Remove once the umbrella chart gains a metering dependency.
+fullnameOverride: metering
+image:
+  repository: ghcr.io/agynio/metering
+  pullPolicy: IfNotPresent
+env:
+  - name: GRPC_ADDRESS
+    value: ":50051"
+  - name: DATABASE_URL
+    value: postgresql://agyn:agyn@platform-postgres.platform.svc:5432/metering?sslmode=disable
+  - name: LOG_LEVEL
+    value: info
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi

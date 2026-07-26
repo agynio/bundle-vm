@@ -12,3 +12,9 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: openfga
+---
+# Agent workloads run here (created by bootstrap terraform in the k3d path).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agyn-workloads

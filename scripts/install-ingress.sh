@@ -56,8 +56,8 @@ helm upgrade --install istiod istio/istiod --version "${ISTIO_VERSION}" \
 	--set meshConfig.ingressService=istio-ingressgateway \
 	--set meshConfig.ingressServiceNamespace=istio-gateway \
 	--set pilot.traceSampling=1.0 \
-	--set pilot.resources.requests.cpu=100m \
-	--set pilot.resources.requests.memory=256Mi
+	--set pilot.resources.requests.cpu=50m \
+	--set pilot.resources.requests.memory=96Mi
 
 log "istio ingress gateway ${ISTIO_VERSION} (NodePort ${INGRESS_NODEPORT})"
 cat >/tmp/gw-values.yaml <<EOF
