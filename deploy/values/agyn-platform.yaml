@@ -20,13 +20,25 @@ s3:
   useSSL: false
   forcePathStyle: true
 
+# install-platform.sh installs openfga, minio and metering itself, so the
+# umbrella must not deploy a second copy. It gained them as optional subcharts
+# in 0.6.0 (they are absent from 0.5.x), all defaulting on.
 openfga:
-  apiUrl: http://openfga.openfga.svc.cluster.local:8080
-  storeId: ""
-  modelId: ""
+  enabled: false
+minio:
+  enabled: false
+metering:
+  enabled: false
 
 # OIDC (bootstrap dev defaults: public mockauth.dev mock issuer).
 platform:
+  # Connection details for the separately installed instance above. These
+  # belong here, not under openfga.*: that key configures the upstream OpenFGA
+  # chart, whose schema rejects unknown properties and fails the render.
+  openfga:
+    apiUrl: http://openfga.openfga.svc.cluster.local:8080
+    storeId: ""
+    modelId: ""
   oidc:
     issuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
     clientId: client_MU95KU3gHQf5Ir7p
