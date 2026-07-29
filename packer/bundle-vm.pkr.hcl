@@ -172,6 +172,10 @@ build {
       "${path.root}/../scripts/install-ingress.sh",
       "${path.root}/../scripts/install-platform.sh",
       "${path.root}/../scripts/prepull-and-wait.sh",
+      # After convergence, before the image is sealed: convergence proves what
+      # is deployed is healthy, this proves what the Gateway advertises is
+      # deployed at all.
+      "${path.root}/../scripts/smoke-test.sh",
       "${path.root}/../scripts/cleanup-image.sh",
     ]
   }

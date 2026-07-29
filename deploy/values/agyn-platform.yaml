@@ -286,11 +286,12 @@ groups:
   # appVersion catches up.
   image:
     tag: 0.1.1
-# networks stays disabled: no e2e suite exercises it, and its current build
-# requires a newer ziti-management API (ListServicesByTag) than the pinned
-# chart provides.
+# The Gateway serves the Networks API unconditionally, so leaving this off
+# does not hide the feature — it makes every ListNetworks call fail with
+# "produced zero addresses" once the console asks for it. ListServicesByTag,
+# the API this needs, ships in the pinned ziti-management.
 networks:
-  enabled: false
+  enabled: true
 expose:
   enabled: false
 ncps:
