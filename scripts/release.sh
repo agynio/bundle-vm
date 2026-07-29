@@ -31,7 +31,9 @@ EOF
 
 arch="${1:-}"
 version="${2:-}"
-[ -n "${arch}" ] && [ -n "${version}" ] || usage
+if [ -z "${arch}" ] || [ -z "${version}" ]; then
+	usage
+fi
 shift 2
 
 publish=true
