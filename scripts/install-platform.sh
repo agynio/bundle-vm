@@ -164,11 +164,17 @@ if kubectl -n platform exec deploy/authorization -- \
 	log "  model ${model} present"
 else
 	log "  model ${model} missing from store ${store}; re-running the migration"
+	# Same job, run again. A completed Job is immutable, so it is deleted and
+	# recreated from its own spec under its own name — the selector and pod
+	# labels are Job-controller state, not something to carry across.
 	kubectl -n platform get job authorization-migrate -o json |
-		python3 -c 'import json,sys; j=json.load(sys.stdin); j["metadata"]={"name":"authorization-remigrate","namespace":"platform"}; j["spec"].pop("selector",None); j["spec"]["template"]["metadata"].pop("labels",None); j.pop("status",None); print(json.dumps(j))' |
-		kubectl apply -f -
-	kubectl -n platform wait --for=condition=complete job/authorization-remigrate --timeout=5m
-	kubectl -n platform logs job/authorization-remigrate
+		python3 -c 'import json,sys; j=json.load(sys.stdin); j["metadata"]={"name":"authorization-migrate","namespace":"platform"}; j["spec"].pop("selector",None); j["spec"]["template"]["metadata"].pop("labels",None); j.pop("status",None); print(json.dumps(j))' \
+			>/tmp/authorization-migrate.json
+	kubectl -n platform delete job authorization-migrate --wait
+	kubectl apply -f /tmp/authorization-migrate.json
+	rm -f /tmp/authorization-migrate.json
+	kubectl -n platform wait --for=condition=complete job/authorization-migrate --timeout=5m
+	kubectl -n platform logs job/authorization-migrate
 	kubectl -n platform rollout restart deploy/authorization
 	kubectl -n platform rollout status deploy/authorization --timeout=5m
 fi
