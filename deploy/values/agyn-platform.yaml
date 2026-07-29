@@ -135,6 +135,25 @@ agents-orchestrator:
     - name: NATS_URL
       value: "nats://nats:4222"
 
+# Shell access to sandboxes. The CLI connects from the host, so the WebSocket
+# URL it is handed carries the forwarded host port, not the in-cluster one
+# (set-ingress-port.sh rewrites it when the host picks a different port).
+terminal-proxy:
+  enabled: true
+  # One replica: this is a single-node VM, so a second buys no failover — it
+  # only competes for the same CPU and memory. Production installs keep the
+  # chart default, where leader election and spare capacity are real.
+  replicaCount: 1
+  terminalProxy:
+    websocketUrl: wss://terminal.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/terminal
+    # Direct dial instead of the overlay: the proxy's Ziti identity has no
+    # provisioning path yet (the same reason egress-gateway is off), and the
+    # only runner in this VM is the in-cluster one, so there is nothing for the
+    # overlay to reach that a Service address does not.
+    ziti:
+      enabled: false
+    runnerAddress: k8s-runner:50051
+
 # llm-proxy exposes a proper toggle rather than a raw env entry.
 llm-proxy:
   # One replica: this is a single-node VM, so a second buys no failover — it

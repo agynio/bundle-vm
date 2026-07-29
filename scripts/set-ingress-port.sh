@@ -10,11 +10,13 @@ set -euo pipefail
 # (see install-platform.sh). What does care is every URL a browser is handed
 # back, because the browser connects from the host:
 #
-#   chat-app     OIDC_REDIRECT_URI, OIDC_POST_LOGOUT_REDIRECT_URI, MEDIA_PROXY_URL
-#   media-proxy  CORS_ALLOWED_ORIGIN
+#   chat-app        OIDC_REDIRECT_URI, OIDC_POST_LOGOUT_REDIRECT_URI, MEDIA_PROXY_URL
+#   media-proxy     CORS_ALLOWED_ORIGIN
+#   terminal-proxy  TERMINAL_PROXY_WEBSOCKET_URL
 #
 # A wrong port here fails visibly: the OIDC provider redirects to a dead port
-# after login, and the browser blocks media on a CORS origin mismatch.
+# after login, the browser blocks media on a CORS origin mismatch, and
+# `agyn sandbox connect` is handed a ticket for a WebSocket nobody is serving.
 #
 # Idempotent: re-running with the port already in place changes nothing.
 
@@ -44,6 +46,7 @@ done
 
 chat_origin="https://chat.${BASE_DOMAIN}:${PORT}"
 media_origin="https://media.${BASE_DOMAIN}:${PORT}"
+terminal_url="wss://terminal.${BASE_DOMAIN}:${PORT}/terminal"
 
 current="$(kubectl get deployment chat-app -n "${NAMESPACE}" \
 	-o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="OIDC_POST_LOGOUT_REDIRECT_URI")].value}' 2>/dev/null || true)"
@@ -59,7 +62,10 @@ kubectl set env deployment/chat-app -n "${NAMESPACE}" \
 	"MEDIA_PROXY_URL=${media_origin}" >/dev/null
 kubectl set env deployment/media-proxy -n "${NAMESPACE}" \
 	"CORS_ALLOWED_ORIGIN=${chat_origin}" >/dev/null
+kubectl set env deployment/terminal-proxy -n "${NAMESPACE}" \
+	"TERMINAL_PROXY_WEBSOCKET_URL=${terminal_url}" >/dev/null
 
 kubectl rollout status deployment/chat-app -n "${NAMESPACE}" --timeout=300s
 kubectl rollout status deployment/media-proxy -n "${NAMESPACE}" --timeout=300s
+kubectl rollout status deployment/terminal-proxy -n "${NAMESPACE}" --timeout=300s
 log "done"
