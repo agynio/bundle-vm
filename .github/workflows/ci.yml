@@ -1,0 +1,122 @@
+name: CI
+
+# Everything that can be checked without booting a VM. The release build takes
+# the better part of an hour, so a typo in a shell script or a packer template
+# should not have to wait for it to be discovered.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: |
+          status=0
+          for script in scripts/*.sh; do
+            bash -n "${script}" || status=1
+          done
+          exit "${status}"
+
+      - name: Shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck --severity=warning scripts/*.sh
+
+      - name: Install packer
+        run: |
+          curl -fsSL https://apt.releases.hashicorp.com/gpg \
+            | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp.gpg
+          echo "deb [signed-by=/usr/share/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/hashicorp.list >/dev/null
+          sudo apt-get update && sudo apt-get install -y packer
+
+      - name: Packer fmt and validate
+        working-directory: packer
+        run: |
+          packer fmt -check -diff .
+          packer init .
+          # validate binds every variable and parses ssh_private_key_file for
+          # real, so a throwaway key is required — /dev/null fails the check.
+          ssh-keygen -t ed25519 -N '' -f /tmp/validate-key -q
+          packer validate \
+            -var arch=amd64 \
+            -var base_image=/dev/null \
+            -var ssh_private_key_file=/tmp/validate-key \
+            -var ssh_public_key="$(cat /tmp/validate-key.pub)" \
+            .
+
+      # The manifests and values are templated with sed, so a broken document
+      # only surfaces at install time inside the VM. Render and parse them here.
+      - name: Render and parse deploy manifests
+        run: |
+          python3 - <<'PY'
+          import glob, pathlib, sys, yaml
+
+          bad = []
+          for path in sorted(glob.glob("deploy/**/*.yaml", recursive=True)):
+              text = pathlib.Path(path).read_text()
+              rendered = (text.replace("{{BASE_DOMAIN}}", "agyn.dev")
+                              .replace("{{INGRESS_PORT}}", "2496")
+                              .replace("{{INGRESS_HOST_PORT}}", "2496"))
+              try:
+                  docs = list(yaml.safe_load_all(rendered))
+              except yaml.YAMLError as exc:
+                  bad.append(f"{path}: {exc}")
+                  continue
+              # A duplicated top-level key silently discards the earlier block;
+              # that has cost us a broken image before.
+              for doc in docs:
+                  if not isinstance(doc, dict):
+                      continue
+              print(f"ok  {path} ({len(docs)} document(s))")
+
+          if bad:
+              print("\n".join(bad), file=sys.stderr)
+              sys.exit(1)
+          PY
+
+      # A duplicated top-level key in a values file is valid YAML and silently
+      # drops the first block. That shipped a crashlooping ziti-management once.
+      - name: Reject duplicate keys in values files
+        run: |
+          python3 - <<'PY'
+          import glob, pathlib, sys, yaml
+
+          class Strict(yaml.SafeLoader):
+              pass
+
+          def no_duplicates(loader, node, deep=False):
+              mapping = {}
+              for key_node, value_node in node.value:
+                  key = loader.construct_object(key_node, deep=deep)
+                  if key in mapping:
+                      raise yaml.YAMLError(f"duplicate key {key!r} at line {key_node.start_mark.line + 1}")
+                  mapping[key] = loader.construct_object(value_node, deep=deep)
+              return mapping
+
+          Strict.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, no_duplicates)
+
+          failed = False
+          for path in sorted(glob.glob("deploy/values/*.yaml")):
+              text = (pathlib.Path(path).read_text()
+                      .replace("{{BASE_DOMAIN}}", "agyn.dev")
+                      .replace("{{INGRESS_PORT}}", "2496")
+                      .replace("{{INGRESS_HOST_PORT}}", "2496"))
+              try:
+                  list(yaml.load_all(text, Strict))
+                  print(f"ok  {path}")
+              except yaml.YAMLError as exc:
+                  print(f"FAIL {path}: {exc}", file=sys.stderr)
+                  failed = True
+          sys.exit(1 if failed else 0)
+          PY

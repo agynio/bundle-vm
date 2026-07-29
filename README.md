@@ -82,12 +82,50 @@ scripts/package.sh arm64 dev    # compress + metadata + generated lima.yaml
 
 Override the base image with `BASE_IMAGE=/abs/path/to/base.qcow2`.
 
-## Publish
+## Release
 
-```sh
-scripts/publish.sh arm64 <version> ghcr.io/agynio/bundle-vm latest   # OCI artifact
-# plus the CDN copy (R2): s5cmd cp artifacts/arm64/* s3://downloads/bundle-vm/<version>/arm64/
+One command builds, packages and publishes an architecture — to GHCR (where the
+next build finds its inputs) and to the CDN (where `agyn local start` finds the
+image). Both have to happen for a release to exist, so `release.sh` does both
+rather than leaving the second to whoever remembers it:
+
+```bash
+scripts/release.sh arm64 0.2.0 --latest
 ```
+
+Every precondition — tools, credentials, hardware acceleration, free disk — is
+checked before the bake starts, so a missing one fails in the first second
+rather than forty minutes in.
+
+| | Built where | How |
+|---|---|---|
+| **amd64** | GitHub Actions | Push a `v*` tag, or run the Release workflow |
+| **arm64** | A maintainer's machine | `scripts/release.sh arm64 <version>` |
+
+arm64 is not built in CI because GitHub offers no arm64 runner with nested
+virtualization, and without KVM the bake takes hours instead of minutes. When
+such a runner exists, arm64 becomes a second job in the same workflow calling
+this same script — which is precisely why the local path is a script and not a
+list of commands in this file.
+
+**A release is not complete until both architectures are published.** The amd64
+workflow says so in its job summary; nothing enforces it.
+
+Publishing needs R2 credentials in the environment (`R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL`) and `oras login ghcr.io`. Pass
+`--no-publish` to build and package without either.
+
+`--latest` repoints `bundle-vm/latest.json`, which is what `version: latest`
+resolves through. It is written after the uploads succeed, so `latest` never
+names a half-uploaded directory.
+
+### Base image
+
+The platform image is built on top of a *published* `bundle-vm-base` version,
+pinned by `BASE_IMAGE_VERSION` in `versions.env` and pulled by
+`scripts/fetch-base.sh` (cached under `.cache/base/`). A build therefore depends
+on a named artifact rather than on whatever qcow2 sits in a sibling checkout. To
+move to a new base, release it from `agynio/bundle-vm-base` and bump the pin.
 
 ## Run
 
