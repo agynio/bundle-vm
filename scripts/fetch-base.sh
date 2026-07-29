@@ -39,7 +39,11 @@ image="${BASE_IMAGE_REGISTRY:-ghcr.io/agynio/bundle-vm-base}"
 ref="${image}:${version}-${arch}"
 
 cache_dir=".cache/base/${version}/${arch}"
-disk="${cache_dir}/bundle-vm-base-${arch}.qcow2"
+# oras records each layer under the path it was pushed with, and the base repo
+# pushes from artifacts/<arch>/, so a pull recreates that nesting rather than
+# dropping the files at the output root.
+pull_dir="${cache_dir}/artifacts/${arch}"
+disk="${pull_dir}/bundle-vm-base-${arch}.qcow2"
 
 log() { printf '[fetch-base] %s\n' "$*" >&2; }
 
@@ -79,9 +83,9 @@ if [ ! -f "${compressed}" ]; then
 fi
 
 # Verify before spending minutes decompressing a truncated download.
-if [ -f "${cache_dir}/checksums.sha256" ]; then
+if [ -f "${pull_dir}/checksums.sha256" ]; then
 	log "verifying checksum"
-	(cd "${cache_dir}" && grep "$(basename "${compressed}")" checksums.sha256 | shasum -a 256 -c -) >&2
+	(cd "${pull_dir}" && grep "$(basename "${compressed}")" checksums.sha256 | shasum -a 256 -c -) >&2
 fi
 
 log "decompressing"
