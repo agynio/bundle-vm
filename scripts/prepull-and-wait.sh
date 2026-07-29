@@ -51,6 +51,20 @@ if [ "${stable}" -lt "${STABLE_CHECKS}" ]; then
 	exit 1
 fi
 
+# Agent workloads are created on demand, so nothing references their images
+# while the image is built and the convergence wait above never pulls them. The
+# first agent run on a fresh VM would fetch them over the network — slow, and
+# impossible offline. Pull them here so they ship in the store like every other
+# image. Keep in sync with ZITI_SIDECAR_IMAGE in deploy/values/agyn-platform.yaml.
+WORKLOAD_IMAGES="${WORKLOAD_IMAGES:-openziti/ziti-tunnel:2.0.0-pre8}"
+for image in ${WORKLOAD_IMAGES}; do
+	log "pre-pulling workload image ${image}"
+	k3s ctr -n k8s.io images pull "docker.io/${image}" >/dev/null || {
+		log "failed to pre-pull ${image}"
+		exit 1
+	}
+done
+
 log "final state:"
 kubectl get pods -A || true
 

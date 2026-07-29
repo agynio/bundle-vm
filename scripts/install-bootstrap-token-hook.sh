@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Places the bootstrap-token script where the host can invoke it on first boot.
-# It is deliberately not run here: at build time there is no per-install token,
-# and baking one would put the same credential in every copy of the image.
+# Places the scripts the host invokes on first boot under /opt/agyn.
+#
+# Both carry a value the image cannot know: the bootstrap token must differ per
+# install (baking one would put the same credential in every copy of the image),
+# and the ingress port is whatever the user had free on their machine. Neither
+# runs here — at build time there is no host to ask.
 
-install -D -m 0755 /tmp/set-bootstrap-token.sh /opt/agyn/set-bootstrap-token.sh
-printf '[install-bootstrap-token-hook] installed /opt/agyn/set-bootstrap-token.sh\n'
+for script in set-bootstrap-token.sh set-ingress-port.sh; do
+	install -D -m 0755 "/tmp/${script}" "/opt/agyn/${script}"
+	printf '[install-bootstrap-token-hook] installed /opt/agyn/%s\n' "${script}"
+done

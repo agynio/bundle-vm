@@ -38,20 +38,25 @@ gateway:
     oidcClientId: client_MU95KU3gHQf5Ir7p
     oidcAudience: ""
     # Build-time bootstrap token, used by the apps-provision Job while the
-    # image is built. It is replaced on first boot by one the host generates
-    # for that install (scripts/set-bootstrap-token.sh), because a token baked
-    # into the image is identical on every machine running that version and
-    # cannot be rotated. The identity UUID matches bootstrap's
-    # cluster_admin_identity_id constant; the matching OpenFGA admin tuple is
-    # written by the apps-provision Job.
-    # Read from a Secret so the host can supply a token for this install
-    # without the value living in the Deployment spec. The image ships a
-    # placeholder the build's own provisioning uses; `agyn local start`
-    # replaces it per install.
-    clusterAdminTokenSecret:
-      name: gateway-bootstrap-token
-      key: token
+    # image is built, and replaced on first boot by one the host generates for
+    # that install (scripts/set-bootstrap-token.sh) — a token baked into the
+    # image is identical on every machine running that version and cannot be
+    # rotated. The identity UUID matches bootstrap's cluster_admin_identity_id
+    # constant; the matching OpenFGA admin tuple is written by apps-provision.
+    #
+    # A literal, not a secretKeyRef: the gateway chart renders CLUSTER_ADMIN_TOKEN
+    # only from this value, so the host rewrites the Deployment env instead.
+    # Leaving it empty is not an option — the gateway refuses to start when
+    # CLUSTER_ADMIN_IDENTITY_ID is set without a token.
+    clusterAdminToken: agyn-local-cluster-admin-token
     clusterAdminIdentityId: a3c1e9d2-7f4b-5e1a-9c3d-2b8f6a4e7d10
+  # Agents dial the gateway over the OpenZiti overlay (gateway.ziti:443), so the
+  # gateway must accept Ziti connections. Without it the overlay dial is reset:
+  # "error reading server preface: ... connection reset by peer".
+  # extraEnvVars is additive; `env` would replace the chart's templated list.
+  extraEnvVars:
+    - name: ZITI_ENABLED
+      value: "true"
 
 # OpenZiti must be switched on explicitly — ZITI_ENABLED defaults to false in
 # these charts, and bootstrap (stacks/platform) sets it to "true". Without it
@@ -82,6 +87,13 @@ agents-orchestrator:
       value: "60s"
     - name: ZITI_ENABLED
       value: "true"
+    # The tunnel sidecar every agent workload gets. Unset, the orchestrator
+    # falls back to openziti/ziti-tunnel:1.6.15 in code, which is two majors
+    # behind the controller (3.2.0-pre6) and router (3.0.0-pre5) this image
+    # installs. Bootstrap pins the same tag; prepull-and-wait.sh bakes it into
+    # the containerd store, since no agent workload runs during the build.
+    - name: ZITI_SIDECAR_IMAGE
+      value: "openziti/ziti-tunnel:2.0.0-pre8"
     - name: ZITI_LEASE_RENEWAL_INTERVAL
       value: "2m"
     - name: ZITI_ENROLLMENT_TIMEOUT
@@ -97,11 +109,11 @@ agents-orchestrator:
     - name: ZITI_ENROLLMENT_CONTROLLER_RESOLVE_HOST
       value: "ziti-controller-client.ziti.svc.cluster.local"
     - name: ZITI_ENROLLMENT_CONTROLLER_PORT
-      value: "{{INGRESS_HOST_PORT}}"
+      value: "{{INGRESS_PORT}}"
     - name: ZITI_RUNTIME_CONTROLLER_RESOLVE_HOST
       value: "ziti-controller-client.ziti.svc.cluster.local"
     - name: ZITI_RUNTIME_CONTROLLER_PORT
-      value: "{{INGRESS_HOST_PORT}}"
+      value: "{{INGRESS_PORT}}"
     - name: POLL_INTERVAL
       value: "5s"
     - name: IDLE_TIMEOUT
@@ -119,6 +131,12 @@ agents-orchestrator:
 llm-proxy:
   llmProxy:
     zitiEnabled: true
+
+# Agents send spans to tracing.ziti:443 over the overlay.
+tracing:
+  extraEnvVars:
+    - name: ZITI_ENABLED
+      value: "true"
 
 console-app:
   oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
@@ -184,7 +202,7 @@ files:
 # which Ziti rejects. Both are fixed in released images, so pin the newer tags
 # until the chart's dependency versions are bumped upstream.
 ziti-management:
-  zitiControllerUrl: https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/edge/management/v1
+  zitiControllerUrl: https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_PORT}}/edge/management/v1
   image:
     tag: 0.10.17
 
@@ -206,6 +224,12 @@ egress-gateway:
 # publishes amd64 — see the multi-arch note in the README).
 groups:
   enabled: true
+  # The subchart's appVersion resolves to 0.1.0, which was published amd64-only
+  # and leaves every arm64 pod in ImagePullBackOff. 0.1.1 is the first tag built
+  # for both architectures (agynio/groups#8); drop this once the subchart's
+  # appVersion catches up.
+  image:
+    tag: 0.1.1
 # networks stays disabled: no e2e suite exercises it, and its current build
 # requires a newer ziti-management API (ListServicesByTag) than the pinned
 # chart provides.

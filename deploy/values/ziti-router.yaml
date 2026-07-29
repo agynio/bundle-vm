@@ -1,10 +1,10 @@
 # OpenZiti edge router (values ported from bootstrap stacks/ziti). Enrolls with
 # the JWT the ziti-provision Job stores in the ziti-router-enrollment secret.
 ctrl:
-  endpoint: ziti.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+  endpoint: ziti.{{BASE_DOMAIN}}:{{INGRESS_PORT}}
 edge:
   advertisedHost: ziti-router.{{BASE_DOMAIN}}
-  advertisedPort: {{INGRESS_HOST_PORT}}
+  advertisedPort: {{INGRESS_PORT}}
 tunnel:
   mode: host
 linkListeners:

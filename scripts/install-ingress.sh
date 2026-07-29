@@ -19,6 +19,17 @@ INGRESS_NODEPORT="${INGRESS_NODEPORT:-32443}"
 
 log() { printf '[install-ingress] %s\n' "$*"; }
 
+# `helm --wait` reports only "context deadline exceeded" when a release never
+# becomes ready, and the build's VM is discarded before anyone can look. Dump
+# what the cluster knows about the namespace before giving up.
+die_with_state() {
+	log "$1 did not become ready; cluster state follows"
+	kubectl -n "$2" get pods -o wide || true
+	kubectl -n "$2" describe pods || true
+	kubectl -n "$2" get events --sort-by=.lastTimestamp | tail -40 || true
+	exit 1
+}
+
 log "waiting for k3s node"
 systemctl enable --now k3s
 until kubectl get --raw=/readyz >/dev/null 2>&1; do sleep 5; done
@@ -43,7 +54,8 @@ EOF
 
 log "istio-base ${ISTIO_VERSION}"
 helm upgrade --install istio-base istio/base --version "${ISTIO_VERSION}" \
-	-n istio-system --wait --timeout 15m
+	-n istio-system --wait --timeout 15m ||
+	die_with_state istio-base istio-system
 
 log "istiod ${ISTIO_VERSION}"
 # The chart reserves 500m/2Gi for pilot by default, sized for a large mesh.
@@ -57,7 +69,8 @@ helm upgrade --install istiod istio/istiod --version "${ISTIO_VERSION}" \
 	--set meshConfig.ingressServiceNamespace=istio-gateway \
 	--set pilot.traceSampling=1.0 \
 	--set pilot.resources.requests.cpu=50m \
-	--set pilot.resources.requests.memory=96Mi
+	--set pilot.resources.requests.memory=96Mi ||
+	die_with_state istiod istio-system
 
 log "istio ingress gateway ${ISTIO_VERSION} (NodePort ${INGRESS_NODEPORT})"
 cat >/tmp/gw-values.yaml <<EOF
@@ -82,7 +95,8 @@ service:
       nodePort: ${INGRESS_NODEPORT}
 EOF
 helm upgrade --install istio-gateway istio/gateway --version "${ISTIO_VERSION}" \
-	-n istio-gateway --wait --timeout 15m -f /tmp/gw-values.yaml
+	-n istio-gateway --wait --timeout 15m -f /tmp/gw-values.yaml ||
+	die_with_state istio-ingressgateway istio-gateway
 rm -f /tmp/gw-values.yaml
 
 log "wait for cert-manager webhook"

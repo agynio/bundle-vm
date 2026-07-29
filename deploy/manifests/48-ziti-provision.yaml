@@ -105,7 +105,7 @@ data:
 
     echo "[ziti-provision] waiting for management API"
     i=0
-    until ziti edge login "https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/edge/management/v1" \
+    until ziti edge login "https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_PORT}}/edge/management/v1" \
         -u "$ZITI_ADMIN_USER" -p "$ZITI_ADMIN_PASSWORD" -y >/dev/null 2>&1; do
       i=$((i + 1))
       [ "$i" -gt 120 ] && echo "management API never became ready" >&2 && exit 1

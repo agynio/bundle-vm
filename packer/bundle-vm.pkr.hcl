@@ -147,10 +147,16 @@ build {
     destination = "/tmp"
   }
 
-  # Runs on first boot with a token the host generated, not at build time.
+  # Run on first boot with values the host supplies, not at build time: a token
+  # generated for this install, and the port it actually forwards.
   provisioner "file" {
     source      = "${path.root}/../scripts/set-bootstrap-token.sh"
     destination = "/tmp/set-bootstrap-token.sh"
+  }
+
+  provisioner "file" {
+    source      = "${path.root}/../scripts/set-ingress-port.sh"
+    destination = "/tmp/set-ingress-port.sh"
   }
 
   provisioner "shell" {
