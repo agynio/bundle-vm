@@ -31,6 +31,13 @@ platform:
     issuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
     clientId: client_MU95KU3gHQf5Ir7p
     audience: ""
+  externalUrls:
+    # Single source of truth: the Gateway hands this to clients when it issues
+    # a ticket, the platform configmap publishes it, and the Terminal Proxy is
+    # wired from the same value. Left unset, the chart default would ship the
+    # example.com placeholder and every client would dial a host that is not
+    # this VM.
+    terminalProxyWebSocket: wss://terminal.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/terminal
 
 gateway:
   # One replica: this is a single-node VM, so a second buys no failover — it
@@ -145,14 +152,20 @@ terminal-proxy:
   # chart default, where leader election and spare capacity are real.
   replicaCount: 1
   terminalProxy:
+    # Repeats platform.externalUrls.terminalProxyWebSocket above. The umbrella
+    # defaults this from a YAML anchor, and anchors resolve when the chart's own
+    # values are parsed — an override here does not flow into it. The chart
+    # fails the render if the two disagree, which is what keeps the URL the
+    # Gateway advertises and the one this service serves in step.
     websocketUrl: wss://terminal.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/terminal
     # The overlay is the only path that reaches a runner in another network,
     # which is what runners generally are. Keeping the VM on it means the path
     # this ships with is the path that gets exercised, rather than a direct
     # dial that happens to work only because this VM's single runner is local.
+    # The identity is requested per pod from Ziti Management and lease-renewed,
+    # per openziti.md#service-identity-self-enrollment.
     ziti:
       enabled: true
-    runnerAddress: k8s-runner:50051
 
 # llm-proxy exposes a proper toggle rather than a raw env entry.
 llm-proxy:
