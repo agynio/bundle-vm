@@ -10,8 +10,10 @@ name: Release
 # Because a release is only complete when both architectures are published, the
 # job summary states plainly that arm64 is still owed.
 
+# Never on pull_request: a release publishes, and a PR is not a release.
 on:
   push:
+    branches: [main]
     tags:
       - "v*"
   workflow_dispatch:
@@ -44,17 +46,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Three ways in, three kinds of version:
+      #   tag v0.2.0   -> 0.2.0, and `latest` moves to it
+      #   push to main -> sha-<commit>, published but never `latest`
+      #   dispatch     -> whatever was typed, `latest` only if asked
+      # Only a tag is a release users are pointed at; main builds exist so the
+      # image is known to still build, and so a specific commit can be tried.
       - name: Resolve version
         id: version
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             version="${{ github.event.inputs.version }}"
-          else
+            latest="${{ github.event.inputs.latest }}"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             # Tags are v-prefixed; published versions are not.
             version="${GITHUB_REF_NAME#v}"
+            latest=true
+          else
+            version="sha-$(git rev-parse --short HEAD)"
+            latest=false
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "Releasing ${version}"
+          echo "latest=${latest}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${version} (latest=${latest})"
 
       # A hosted runner has ~14 GB free on /, and this build needs well over 20.
       # These toolchains are preinstalled for other people's jobs and unused here.
@@ -108,7 +122,7 @@ jobs:
         run: |
           args=(amd64 "${{ steps.version.outputs.version }}")
           [ "${{ github.event.inputs.publish }}" = "false" ] && args+=(--no-publish)
-          [ "${{ github.event.inputs.latest }}" = "true" ] && args+=(--latest)
+          [ "${{ steps.version.outputs.latest }}" = "true" ] && args+=(--latest)
           scripts/release.sh "${args[@]}"
 
       # Keep the build log and metadata even when the disk itself is too large
@@ -132,10 +146,15 @@ jobs:
             echo
             cat artifacts/amd64/checksums.sha256
             echo
-            echo "**arm64 is not built by CI** — no GitHub runner offers nested"
-            echo "virtualization on arm64. Release it from a maintainer machine:"
-            echo
-            echo '```bash'
-            echo "scripts/release.sh arm64 ${{ steps.version.outputs.version }}"
-            echo '```'
+            # Only a tag is a release anyone is pointed at, so only a tag is
+            # incomplete without its other architecture.
+            if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              echo "**arm64 is not built by CI** — no GitHub runner offers nested"
+              echo "virtualization on arm64, so this release is not complete until"
+              echo "it is built from a maintainer machine:"
+              echo
+              echo '```bash'
+              echo "scripts/release.sh arm64 ${{ steps.version.outputs.version }} --latest"
+              echo '```'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
