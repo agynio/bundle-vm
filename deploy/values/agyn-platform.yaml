@@ -292,6 +292,12 @@ groups:
 # the API this needs, ships in the pinned ziti-management.
 networks:
   enabled: true
+  # Pinned because the umbrella's vendored networks chart still carries
+  # appVersion 0.1.0, and that image is a single amd64 manifest — on this arm64
+  # VM the pod dies with `exec format error`. 0.1.1 is the first multi-arch
+  # build. Drop this once the umbrella bumps the chart it vendors.
+  image:
+    tag: "0.1.2"
 expose:
   enabled: false
 ncps:
