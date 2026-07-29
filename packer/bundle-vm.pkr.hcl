@@ -147,6 +147,18 @@ build {
     destination = "/tmp"
   }
 
+  # Run on first boot with values the host supplies, not at build time: a token
+  # generated for this install, and the port it actually forwards.
+  provisioner "file" {
+    source      = "${path.root}/../scripts/set-bootstrap-token.sh"
+    destination = "/tmp/set-bootstrap-token.sh"
+  }
+
+  provisioner "file" {
+    source      = "${path.root}/../scripts/set-ingress-port.sh"
+    destination = "/tmp/set-ingress-port.sh"
+  }
+
   provisioner "shell" {
     environment_vars = [
       "ARCH=${var.arch}",
@@ -156,6 +168,7 @@ build {
     ]
     execute_command = "{{ .Vars }}sudo -E bash '{{ .Path }}'"
     scripts = [
+      "${path.root}/../scripts/install-bootstrap-token-hook.sh",
       "${path.root}/../scripts/install-ingress.sh",
       "${path.root}/../scripts/install-platform.sh",
       "${path.root}/../scripts/prepull-and-wait.sh",

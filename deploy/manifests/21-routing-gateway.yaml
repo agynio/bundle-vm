@@ -30,6 +30,7 @@ spec:
         - "minio-api.{{BASE_DOMAIN}}"
         - "openfga.{{BASE_DOMAIN}}"
         - "openfga-playground.{{BASE_DOMAIN}}"
+        - "terminal.{{BASE_DOMAIN}}"
         - "tracing.{{BASE_DOMAIN}}"
 ---
 # Argo CD route (also present on the base image; reasserted here so the platform

@@ -4,3 +4,6 @@ output/
 *.log
 *.qcow2
 *.qcow2.xz
+
+# Base images pulled by scripts/fetch-base.sh
+.cache/

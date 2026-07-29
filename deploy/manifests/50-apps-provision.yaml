@@ -1,0 +1,189 @@
+# One-shot provisioning of the apps layer (ported from bootstrap stacks/apps,
+# which uses the agyn Terraform provider). Grants the static cluster-admin
+# identity its OpenFGA admin tuple, registers the k8s-runner through the
+# Gateway API, and stores the returned service token as the secret the
+# agyn-apps chart expects. Runs on the ziti-controller image (curl + jq, kept
+# in the image cache by the ziti install). Idempotent: exits early when the
+# runner token secret already exists.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: apps-provision
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: apps-provision-secrets
+  namespace: platform
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apps-provision-secrets
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: apps-provision-secrets
+subjects:
+  - kind: ServiceAccount
+    name: apps-provision
+    namespace: platform
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: apps-provision
+  namespace: platform
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels:
+        app: apps-provision
+    spec:
+      serviceAccountName: apps-provision
+      restartPolicy: OnFailure
+      containers:
+        - name: provision
+          image: docker.io/openziti/ziti-controller:2.0.0-pre10
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+
+              GW=http://gateway.platform.svc.cluster.local:8080
+              OPENFGA=http://openfga.openfga.svc.cluster.local:8080
+              ADMIN_TOKEN=agyn-local-cluster-admin-token
+              ADMIN_IDENTITY=a3c1e9d2-7f4b-5e1a-9c3d-2b8f6a4e7d10
+              SA=/var/run/secrets/kubernetes.io/serviceaccount
+              K8S_TOKEN="$(cat "$SA/token")"
+              K8S=https://kubernetes.default.svc
+
+              k8s_get() {
+                curl -sS -o /dev/null -w '%{http_code}' --cacert "$SA/ca.crt" \
+                  -H "Authorization: Bearer $K8S_TOKEN" "$K8S$1"
+              }
+
+              if [ "$(k8s_get /api/v1/namespaces/platform/secrets/k8s-runner-service-token)" = "200" ] \
+                && [ "$(k8s_get /api/v1/namespaces/platform/configmaps/agyn-local-provision)" = "200" ]; then
+                echo "[apps-provision] runner secret and provision configmap exist; nothing to do"
+                exit 0
+              fi
+
+              gw() { # rpc-path json-body
+                curl -sS "$GW/$1" -H "Authorization: Bearer $ADMIN_TOKEN" \
+                  -H 'content-type: application/json' -d "$2"
+              }
+
+              echo "[apps-provision] waiting for openfga"
+              until curl -sf "$OPENFGA/healthz" >/dev/null 2>&1; do sleep 5; done
+
+              echo "[apps-provision] waiting for an authorization store"
+              STORE_ID=""
+              until [ -n "$STORE_ID" ]; do
+                STORE_ID="$(curl -sf "$OPENFGA/stores" | jq -r '.stores[0].id // empty')" || true
+                [ -n "$STORE_ID" ] || sleep 5
+              done
+              echo "[apps-provision] store: $STORE_ID"
+
+              echo "[apps-provision] writing cluster admin tuple"
+              write_out="$(curl -sS -X POST "$OPENFGA/stores/$STORE_ID/write" \
+                -H 'content-type: application/json' \
+                -d "{\"writes\":{\"tuple_keys\":[{\"user\":\"identity:$ADMIN_IDENTITY\",\"relation\":\"admin\",\"object\":\"cluster:global\"}]}}")"
+              if echo "$write_out" | grep -q '"code"'; then
+                if echo "$write_out" | grep -qi 'already exists'; then
+                  echo "[apps-provision] admin tuple already present"
+                else
+                  echo "[apps-provision] tuple write failed: $write_out" >&2
+                  exit 1
+                fi
+              fi
+
+              echo "[apps-provision] waiting for gateway"
+              until curl -sf -o /dev/null "$GW/agynio.api.gateway.v1.RunnersGateway/ListRunners" \
+                -H "Authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/json' -d '{}'; do
+                sleep 5
+              done
+
+              # --- Organization (needed for the LLM model below; the runner
+              # itself stays cluster-scoped, matching bootstrap).
+              echo "[apps-provision] resolving platform organization"
+              ORG_ID="$(gw agynio.api.gateway.v1.OrganizationsGateway/ListOrganizations '{}' \
+                | jq -r '(.organizations // [])[] | select((.name // "") == "platform") | (.meta.id // .id) // empty' | head -1)"
+              if [ -z "$ORG_ID" ]; then
+                CREATED="$(gw agynio.api.gateway.v1.OrganizationsGateway/CreateOrganization '{"name":"platform"}')"
+                ORG_ID="$(echo "$CREATED" | jq -r '.organization.meta.id // .organization.id // empty')"
+              fi
+              if [ -z "$ORG_ID" ]; then
+                echo "[apps-provision] could not resolve organization" >&2
+                exit 1
+              fi
+              echo "[apps-provision] organization: $ORG_ID"
+
+              if [ "$(k8s_get /api/v1/namespaces/platform/secrets/k8s-runner-service-token)" != "200" ]; then
+                echo "[apps-provision] registering k8s-runner"
+                # Cluster-scoped (no organizationId), matching bootstrap's
+                # agyn_runner resource.
+                REG="$(gw agynio.api.gateway.v1.RunnersGateway/RegisterRunner \
+                  '{"name":"k8s-runner","labels":{"type":"kubernetes"},"capabilities":["docker"]}')"
+                SERVICE_TOKEN="$(echo "$REG" | jq -r '.serviceToken // empty')"
+                if [ -z "$SERVICE_TOKEN" ]; then
+                  echo "[apps-provision] RegisterRunner failed: $REG" >&2
+                  exit 1
+                fi
+
+                echo "[apps-provision] storing k8s-runner-service-token"
+                body="$(jq -n --arg t "$SERVICE_TOKEN" \
+                  '{apiVersion:"v1",kind:"Secret",metadata:{name:"k8s-runner-service-token",namespace:"platform"},type:"Opaque",stringData:{token:$t}}')"
+                code="$(curl -sS -o /dev/null -w '%{http_code}' --cacert "$SA/ca.crt" \
+                  -H "Authorization: Bearer $K8S_TOKEN" -H 'content-type: application/json' \
+                  -X POST "$K8S/api/v1/namespaces/platform/secrets" -d "$body")"
+                case "$code" in
+                  201|409) echo "[apps-provision] secret stored ($code)" ;;
+                  *) echo "[apps-provision] secret create failed: HTTP $code" >&2; exit 1 ;;
+                esac
+              fi
+
+              # --- LLM provider/model (e2e CI parity). The provider endpoint is
+              # a placeholder: agents need the model row to exist, not to answer
+              # completions.
+              echo "[apps-provision] resolving LLM model"
+              MODEL_ID="$(gw agynio.api.gateway.v1.LLMGateway/ListModels \
+                "{\"organizationId\":\"$ORG_ID\",\"llmProviderId\":\"\",\"pageSize\":200,\"pageToken\":\"\"}" \
+                | jq -r '(.models // [])[0] | (.meta.id // .id) // empty')"
+              if [ -z "$MODEL_ID" ]; then
+                PROVIDER_ID="$(gw agynio.api.gateway.v1.LLMGateway/CreateLLMProvider \
+                  "{\"endpoint\":\"https://llm.agyn.dev/local\",\"authMethod\":\"AUTH_METHOD_BEARER\",\"token\":\"agyn-local-llm-token\",\"organizationId\":\"$ORG_ID\"}" \
+                  | jq -r '.provider.meta.id // .provider.id // empty')"
+                if [ -z "$PROVIDER_ID" ]; then
+                  echo "[apps-provision] CreateLLMProvider failed" >&2
+                  exit 1
+                fi
+                MODEL_ID="$(gw agynio.api.gateway.v1.LLMGateway/CreateModel \
+                  "{\"name\":\"Local Model\",\"llmProviderId\":\"$PROVIDER_ID\",\"remoteName\":\"gpt-4o-mini\",\"organizationId\":\"$ORG_ID\"}" \
+                  | jq -r '.model.meta.id // .model.id // empty')"
+              fi
+              if [ -z "$MODEL_ID" ]; then
+                echo "[apps-provision] could not resolve model" >&2
+                exit 1
+              fi
+              echo "[apps-provision] model: $MODEL_ID"
+
+              echo "[apps-provision] storing agyn-local-provision configmap"
+              cm="$(jq -n --arg org "$ORG_ID" --arg model "$MODEL_ID" \
+                '{apiVersion:"v1",kind:"ConfigMap",metadata:{name:"agyn-local-provision",namespace:"platform"},data:{organizationId:$org,modelId:$model}}')"
+              code="$(curl -sS -o /dev/null -w '%{http_code}' --cacert "$SA/ca.crt" \
+                -H "Authorization: Bearer $K8S_TOKEN" -H 'content-type: application/json' \
+                -X POST "$K8S/api/v1/namespaces/platform/configmaps" -d "$cm")"
+              case "$code" in
+                201|409) echo "[apps-provision] configmap stored ($code)" ;;
+                *) echo "[apps-provision] configmap create failed: HTTP $code" >&2; exit 1 ;;
+              esac
+
+              echo "[apps-provision] done"

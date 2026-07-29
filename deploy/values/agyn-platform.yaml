@@ -31,12 +31,156 @@ platform:
     issuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
     clientId: client_MU95KU3gHQf5Ir7p
     audience: ""
+  externalUrls:
+    # Single source of truth: the Gateway hands this to clients when it issues
+    # a ticket, the platform configmap publishes it, and the Terminal Proxy is
+    # wired from the same value. Left unset, the chart default would ship the
+    # example.com placeholder and every client would dial a host that is not
+    # this VM.
+    terminalProxyWebSocket: wss://terminal.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/terminal
 
 gateway:
+  # One replica: this is a single-node VM, so a second buys no failover — it
+  # only competes for the same CPU and memory. Production installs keep the
+  # chart default, where leader election and spare capacity are real.
+  replicaCount: 1
   gateway:
     oidcIssuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
     oidcClientId: client_MU95KU3gHQf5Ir7p
     oidcAudience: ""
+    # Build-time bootstrap token, used by the apps-provision Job while the
+    # image is built, and replaced on first boot by one the host generates for
+    # that install (scripts/set-bootstrap-token.sh) — a token baked into the
+    # image is identical on every machine running that version and cannot be
+    # rotated. The identity UUID matches bootstrap's cluster_admin_identity_id
+    # constant; the matching OpenFGA admin tuple is written by apps-provision.
+    #
+    # A literal, not a secretKeyRef: the gateway chart renders CLUSTER_ADMIN_TOKEN
+    # only from this value, so the host rewrites the Deployment env instead.
+    # Leaving it empty is not an option — the gateway refuses to start when
+    # CLUSTER_ADMIN_IDENTITY_ID is set without a token.
+    clusterAdminToken: agyn-local-cluster-admin-token
+    clusterAdminIdentityId: a3c1e9d2-7f4b-5e1a-9c3d-2b8f6a4e7d10
+  # Agents dial the gateway over the OpenZiti overlay (gateway.ziti:443), so the
+  # gateway must accept Ziti connections. Without it the overlay dial is reset:
+  # "error reading server preface: ... connection reset by peer".
+  # extraEnvVars is additive; `env` would replace the chart's templated list.
+  extraEnvVars:
+    - name: ZITI_ENABLED
+      value: "true"
+
+# OpenZiti must be switched on explicitly — ZITI_ENABLED defaults to false in
+# these charts, and bootstrap (stacks/platform) sets it to "true". Without it
+# the orchestrator builds no ziti-management client, so createIdentity()
+# returns nil silently: agent workloads get no OpenZiti identity and no tunnel
+# sidecar, then die with "name resolver error: produced zero addresses" trying
+# to reach gateway.ziti.
+#
+# NOTE: `env` REPLACES a subchart's default list (documented in the umbrella
+# chart's own values.yaml), and the umbrella already replaces the
+# agents-orchestrator list with three entries — dropping every Ziti/agent
+# address the subchart shipped. The full list is restored here.
+agents-orchestrator:
+  # One replica: this is a single-node VM, so a second buys no failover — it
+  # only competes for the same CPU and memory. Production installs keep the
+  # chart default, where leader election and spare capacity are real.
+  replicaCount: 1
+  env:
+    - name: THREADS_ADDRESS
+      value: "threads:50051"
+    - name: NOTIFICATIONS_ADDRESS
+      value: "notifications:50051"
+    - name: AGENTS_ADDRESS
+      value: "agents:50051"
+    - name: SECRETS_ADDRESS
+      value: "secrets:50051"
+    - name: RUNNERS_ADDRESS
+      value: "runners:50051"
+    - name: METERING_SERVICE_ADDRESS
+      value: "metering:50051"
+    - name: METERING_SAMPLE_INTERVAL
+      value: "60s"
+    - name: ZITI_ENABLED
+      value: "true"
+    # The tunnel sidecar every agent workload gets. Unset, the orchestrator
+    # falls back to openziti/ziti-tunnel:1.6.15 in code, which is two majors
+    # behind the controller (3.2.0-pre6) and router (3.0.0-pre5) this image
+    # installs. Bootstrap pins the same tag; prepull-and-wait.sh bakes it into
+    # the containerd store, since no agent workload runs during the build.
+    - name: ZITI_SIDECAR_IMAGE
+      value: "openziti/ziti-tunnel:2.0.0-pre8"
+    - name: ZITI_LEASE_RENEWAL_INTERVAL
+      value: "2m"
+    - name: ZITI_ENROLLMENT_TIMEOUT
+      value: "2m"
+    - name: ZITI_MANAGEMENT_ADDRESS
+      value: "ziti-management:50051"
+    - name: AGENT_GATEWAY_ADDRESS
+      value: "gateway.ziti:443"
+    - name: AGENT_TRACING_ADDRESS
+      value: "tracing.ziti:443"
+    - name: AGENT_LLM_BASE_URL
+      value: "http://llm-proxy.ziti/v1"
+    - name: ZITI_ENROLLMENT_CONTROLLER_RESOLVE_HOST
+      value: "ziti-controller-client.ziti.svc.cluster.local"
+    - name: ZITI_ENROLLMENT_CONTROLLER_PORT
+      value: "{{INGRESS_PORT}}"
+    - name: ZITI_RUNTIME_CONTROLLER_RESOLVE_HOST
+      value: "ziti-controller-client.ziti.svc.cluster.local"
+    - name: ZITI_RUNTIME_CONTROLLER_PORT
+      value: "{{INGRESS_PORT}}"
+    - name: POLL_INTERVAL
+      value: "5s"
+    - name: IDLE_TIMEOUT
+      value: "30s"
+    - name: EGRESS_CA_NAMESPACE
+      value: "platform"
+    - name: GROUP_SYNC_ENABLED
+      value: "true"
+    - name: GROUPS_ADDRESS
+      value: "groups:50051"
+    - name: NATS_URL
+      value: "nats://nats:4222"
+
+# Shell access to sandboxes. The CLI connects from the host, so the WebSocket
+# URL it is handed carries the forwarded host port, not the in-cluster one
+# (set-ingress-port.sh rewrites it when the host picks a different port).
+terminal-proxy:
+  enabled: true
+  # One replica: this is a single-node VM, so a second buys no failover — it
+  # only competes for the same CPU and memory. Production installs keep the
+  # chart default, where leader election and spare capacity are real.
+  replicaCount: 1
+  terminalProxy:
+    # Repeats platform.externalUrls.terminalProxyWebSocket above. The umbrella
+    # defaults this from a YAML anchor, and anchors resolve when the chart's own
+    # values are parsed — an override here does not flow into it. The chart
+    # fails the render if the two disagree, which is what keeps the URL the
+    # Gateway advertises and the one this service serves in step.
+    websocketUrl: wss://terminal.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/terminal
+    # The overlay is the only path that reaches a runner in another network,
+    # which is what runners generally are. Keeping the VM on it means the path
+    # this ships with is the path that gets exercised, rather than a direct
+    # dial that happens to work only because this VM's single runner is local.
+    # The identity is requested per pod from Ziti Management and lease-renewed,
+    # per openziti.md#service-identity-self-enrollment.
+    ziti:
+      enabled: true
+
+# llm-proxy exposes a proper toggle rather than a raw env entry.
+llm-proxy:
+  # One replica: this is a single-node VM, so a second buys no failover — it
+  # only competes for the same CPU and memory. Production installs keep the
+  # chart default, where leader election and spare capacity are real.
+  replicaCount: 1
+  llmProxy:
+    zitiEnabled: true
+
+# Agents send spans to tracing.ziti:443 over the overlay.
+tracing:
+  extraEnvVars:
+    - name: ZITI_ENABLED
+      value: "true"
 
 console-app:
   oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
@@ -95,21 +239,45 @@ files:
 # OpenZiti-backed services. ziti-management self-enrolls with the JWT from the
 # ziti-management-enrollment secret (ziti-provision Job); runners/orchestrator/
 # gateway then self-enroll via ziti-management.
+# The umbrella chart pins egress 0.1.1 and ziti-management 0.10.12, which
+# predate the OpenZiti provisioning fixes: 0.1.1 never creates the per-rule
+# OpenZiti service (attach then fails with "no services found with the given
+# ids"), and 0.10.12 emits an empty `address` alongside forwardAddress=true,
+# which Ziti rejects. Both are fixed in released images, so pin the newer tags
+# until the chart's dependency versions are bumped upstream.
 ziti-management:
-  zitiControllerUrl: https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/edge/management/v1
+  zitiControllerUrl: https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_PORT}}/edge/management/v1
+  image:
+    tag: 0.10.17
 
 egress:
   enabled: true
+  image:
+    tag: 0.1.3
 
 # --- Disabled services --------------------------------------------
 # egress-gateway matches bootstrap parity (its ziti identity secret has no
-# provisioning path yet); groups/networks are off by default in the umbrella;
+# provisioning path yet); networks is off (needs a newer ziti-management API);
 # expose/ncps/registryMirror are optional infra.
+
 egress-gateway:
   enabled: false
-networks:
-  enabled: false
+# groups is a core dependency: users/apps/agents do group-sync against it, and
+# without it create-user/agent block ~30s on a downstream timeout. Needs its
+# database (shared Postgres + db-urls secret) and an arm64 image (upstream only
+# publishes amd64 — see the multi-arch note in the README).
 groups:
+  enabled: true
+  # The subchart's appVersion resolves to 0.1.0, which was published amd64-only
+  # and leaves every arm64 pod in ImagePullBackOff. 0.1.1 is the first tag built
+  # for both architectures (agynio/groups#8); drop this once the subchart's
+  # appVersion catches up.
+  image:
+    tag: 0.1.1
+# networks stays disabled: no e2e suite exercises it, and its current build
+# requires a newer ziti-management API (ListServicesByTag) than the pinned
+# chart provides.
+networks:
   enabled: false
 expose:
   enabled: false

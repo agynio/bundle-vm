@@ -40,7 +40,7 @@ spec:
         - destination:
             host: ziti-controller-client.ziti.svc.cluster.local
             port:
-              number: {{INGRESS_HOST_PORT}}
+              number: {{INGRESS_PORT}}
 ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
@@ -61,7 +61,7 @@ spec:
         - destination:
             host: ziti-controller-mgmt.ziti.svc.cluster.local
             port:
-              number: {{INGRESS_HOST_PORT}}
+              number: {{INGRESS_PORT}}
 ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
@@ -82,4 +82,4 @@ spec:
         - destination:
             host: ziti-router-edge.ziti.svc.cluster.local
             port:
-              number: {{INGRESS_HOST_PORT}}
+              number: {{INGRESS_PORT}}

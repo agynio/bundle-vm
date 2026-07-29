@@ -1,18 +1,23 @@
-# OpenZiti controller (values ported from bootstrap stacks/deps). The advertised
-# host:port is baked into enrollment JWTs, so INGRESS_HOST_PORT must equal the
-# host port Lima forwards for external clients; in-cluster clients reach it via
-# the coredns-custom rewrites.
+# OpenZiti controller (values ported from bootstrap stacks/deps).
+#
+# INGRESS_PORT is an internal constant, deliberately NOT the port Lima forwards
+# on the host. The advertised host:port is baked into every enrollment JWT and
+# enrolled identity, so it cannot change after the image is built — and it never
+# needs to: in-cluster clients resolve ziti.<domain> through the coredns-custom
+# rewrites straight to the controller's ClusterIP, so none of this traffic
+# leaves the VM. Only browser-facing URLs care which port the host forwards, and
+# scripts/set-ingress-port.sh rewrites those at boot.
 cluster:
   mode: standalone
 clientApi:
   advertisedHost: ziti.{{BASE_DOMAIN}}
-  advertisedPort: {{INGRESS_HOST_PORT}}
+  advertisedPort: {{INGRESS_PORT}}
   service:
     enabled: true
     type: ClusterIP
 managementApi:
   advertisedHost: ziti-mgmt.{{BASE_DOMAIN}}
-  advertisedPort: {{INGRESS_HOST_PORT}}
+  advertisedPort: {{INGRESS_PORT}}
   service:
     enabled: true
     type: ClusterIP

@@ -161,6 +161,30 @@ spec:
             port:
               number: 8080
 ---
+# Terminal sessions. The route carries a WebSocket that stays open for the life
+# of a shell; no `timeout` is set because Istio leaves HTTP request timeouts
+# disabled by default and rejects an explicit 0s ("duration must be greater
+# than 1ms"), so naming it would break the apply rather than document it.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: terminal-proxy
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "terminal.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: terminal-proxy.platform.svc.cluster.local
+            port:
+              number: 8080
+---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:

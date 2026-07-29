@@ -1,0 +1,49 @@
+# agyn-apps umbrella: the default k8s-runner only. Apps (reminders,
+# telegram-connector) stay disabled until their DB/registration provisioning
+# is ported. The env list replaces the chart default wholesale (subchart env
+# override semantics), so every entry must be re-declared — the only actual
+# change is GATEWAY_ADDRESS: the platform umbrella sets fullnameOverride
+# "gateway", not the chart-default "gateway-gateway".
+apps:
+  reminders:
+    enabled: false
+  telegramConnector:
+    enabled: false
+
+runners:
+  k8s:
+    enabled: true
+
+k8s-runner:
+  # Tests and platform services dial the bare "k8s-runner" service name
+  # (bootstrap parity).
+  fullnameOverride: k8s-runner
+  resources:
+    requests:
+      cpu: 20m
+      memory: 96Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  env:
+    - name: GRPC_ADDR
+      value: 0.0.0.0:50051
+    - name: KUBE_NAMESPACE
+      value: agyn-workloads
+    - name: PVC_STORAGE_SIZE
+      value: 10Gi
+    - name: ZITI_ENABLED
+      value: "true"
+    - name: GATEWAY_ADDRESS
+      value: gateway.platform.svc.cluster.local:8080
+    - name: CAPABILITY_IMPLEMENTATIONS
+      value: '{"docker":"rootless"}'
+    - name: SERVICE_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: k8s-runner-service-token
+          key: token
+    - name: ZITI_ENROLLMENT_TIMEOUT
+      value: 2m
+    - name: LOG_LEVEL
+      value: info
