@@ -146,12 +146,12 @@ terminal-proxy:
   replicaCount: 1
   terminalProxy:
     websocketUrl: wss://terminal.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/terminal
-    # Direct dial instead of the overlay: the proxy's Ziti identity has no
-    # provisioning path yet (the same reason egress-gateway is off), and the
-    # only runner in this VM is the in-cluster one, so there is nothing for the
-    # overlay to reach that a Service address does not.
+    # The overlay is the only path that reaches a runner in another network,
+    # which is what runners generally are. Keeping the VM on it means the path
+    # this ships with is the path that gets exercised, rather than a direct
+    # dial that happens to work only because this VM's single runner is local.
     ziti:
-      enabled: false
+      enabled: true
     runnerAddress: k8s-runner:50051
 
 # llm-proxy exposes a proper toggle rather than a raw env entry.
