@@ -20,14 +20,13 @@ s3:
   useSSL: false
   forcePathStyle: true
 
-# install-platform.sh installs openfga, minio and metering itself, so the
-# umbrella must not deploy a second copy. It gained them as optional subcharts
-# in 0.6.0 (they are absent from 0.5.x), all defaulting on.
+# install-platform.sh installs openfga and minio itself, so the umbrella must
+# not deploy a second copy. It gained them as optional subcharts in 0.6.0 (they
+# are absent from 0.5.x), both defaulting on. metering is deliberately not here
+# — the umbrella owns it now.
 openfga:
   enabled: false
 minio:
-  enabled: false
-metering:
   enabled: false
 
 # OIDC (bootstrap dev defaults: public mockauth.dev mock issuer).
