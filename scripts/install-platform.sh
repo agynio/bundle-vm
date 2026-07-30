@@ -36,8 +36,7 @@ ZITI_ROUTER_VERSION=3.0.0-pre5
 POSTGRES_HELM_VERSION=0.1.1
 OPENFGA_VERSION=0.2.56
 MINIO_VERSION=5.4.0
-METERING_VERSION=0.1.3
-AGYN_PLATFORM_VERSION=0.6.2
+AGYN_PLATFORM_VERSION=0.6.3
 AGYN_APPS_VERSION=0.1.0
 
 log() { printf '[install-platform] %s\n' "$*"; }
@@ -106,11 +105,14 @@ helm upgrade --install minio minio/minio \
 	--version "${MINIO_VERSION}" -n minio \
 	--wait --timeout "${HELM_TIMEOUT}" -f "$(values minio)"
 
-# metering: its own release (not in the umbrella chart), on the shared Postgres.
-log "metering ${METERING_VERSION}"
-helm upgrade --install metering oci://ghcr.io/agynio/charts/metering \
-	--version "${METERING_VERSION}" -n platform \
-	--wait --timeout "${HELM_TIMEOUT}" -f "$(values metering)"
+# metering used to be its own release, from before the umbrella carried it. An
+# image built then still has that release, and Helm refuses to adopt resources
+# another release owns — so it is removed here before the umbrella renders its
+# own copy. Nothing is lost: the data lives in Postgres, not the release.
+if helm status metering -n platform >/dev/null 2>&1; then
+	log "removing the standalone metering release; the umbrella owns it now"
+	helm uninstall metering -n platform --wait
+fi
 
 # 6) The platform umbrella. No --wait: migrations and self-enrollment retry on
 #    their own schedules; prepull-and-wait.sh watches overall convergence.
