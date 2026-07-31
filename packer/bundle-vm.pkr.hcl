@@ -159,6 +159,12 @@ build {
     destination = "/tmp/set-ingress-port.sh"
   }
 
+  # Upgrades the platform releases in place, long after this image was built.
+  provisioner "file" {
+    source      = "${path.root}/../scripts/upgrade-platform.sh"
+    destination = "/tmp/upgrade-platform.sh"
+  }
+
   provisioner "shell" {
     environment_vars = [
       "ARCH=${var.arch}",
