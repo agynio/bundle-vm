@@ -10,6 +10,8 @@ metadata:
 data:
   init.sql: |
     CREATE DATABASE agents;
+    CREATE DATABASE reminders;
+    CREATE DATABASE telegram_connector;
     CREATE DATABASE apps;
     CREATE DATABASE chat;
     CREATE DATABASE egress;

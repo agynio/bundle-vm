@@ -1,14 +1,20 @@
-# agyn-apps umbrella: the default k8s-runner only. Apps (reminders,
-# telegram-connector) stay disabled until their DB/registration provisioning
-# is ported. The env list replaces the chart default wholesale (subchart env
-# override semantics), so every entry must be re-declared — the only actual
-# change is GATEWAY_ADDRESS: the platform umbrella sets fullnameOverride
-# "gateway", not the chart-default "gateway-gateway".
+# agyn-apps umbrella: the k8s-runner and the first-party apps.
+#
+# Both apps need three things the bundle provisions for them: a database
+# (30-postgres.yaml, agyn-app-database-urls), a service token they cannot mint
+# for themselves (apps-provision registers them and stores it), and an enrolled
+# OpenZiti identity (ziti-provision). With those in place there is no reason for
+# an install to ship without them.
+#
+# The env list replaces the chart default wholesale (subchart env override
+# semantics), so every entry must be re-declared — the only actual change is
+# GATEWAY_ADDRESS: the platform umbrella sets fullnameOverride "gateway", not
+# the chart-default "gateway-gateway".
 apps:
   reminders:
-    enabled: false
+    enabled: true
   telegramConnector:
-    enabled: false
+    enabled: true
 
 runners:
   k8s:

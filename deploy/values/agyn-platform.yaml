@@ -267,12 +267,11 @@ egress:
     tag: 0.1.3
 
 # --- Disabled services --------------------------------------------
-# egress-gateway matches bootstrap parity (its ziti identity secret has no
-# provisioning path yet); networks is off (needs a newer ziti-management API);
-# expose/ncps/registryMirror are optional infra.
-
+# On. It mounts an *enrolled* OpenZiti identity rather than enrolling itself, so
+# the ziti-provision Job enrols one for it (egress-gateway-ziti-identity) — a
+# pod cannot consume its own one-time token.
 egress-gateway:
-  enabled: false
+  enabled: true
 # groups is a core dependency: users/apps/agents do group-sync against it, and
 # without it create-user/agent block ~30s on a downstream timeout. Needs its
 # database (shared Postgres + db-urls secret) and an arm64 image (upstream only
@@ -297,8 +296,10 @@ networks:
   # build. Drop this once the umbrella bumps the chart it vendors.
   image:
     tag: "0.1.2"
+# On, like every other platform service the Gateway routes to. Its database is
+# already provisioned in the shared Postgres and named in the db-urls secret.
 expose:
-  enabled: false
+  enabled: true
 ncps:
   enabled: false
 registryMirror:
