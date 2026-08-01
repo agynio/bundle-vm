@@ -16,6 +16,67 @@ apps:
   telegramConnector:
     enabled: true
 
+# Both apps dial the Gateway by name, and the chart defaults to its own
+# "gateway-gateway" — the platform umbrella sets fullnameOverride "gateway", so
+# the default resolves to nothing and both crashloop on startup. A subchart env
+# override replaces the list wholesale, so every entry is re-declared here.
+reminders:
+  env:
+    - name: HTTP_ADDRESS
+      value: ":8080"
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: agyn-app-database-urls
+          key: reminders
+    - name: ZITI_IDENTITY_FILE
+      value: /ziti/identity.json
+    - name: ZITI_SERVICE_NAME
+      value: app-reminders
+    - name: GATEWAY_SERVICE_NAME
+      value: gateway
+    - name: GATEWAY_URL
+      value: http://gateway.platform.svc.cluster.local:8080
+    - name: SERVICE_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: reminders-service-token
+          key: token
+
+telegram-connector:
+  env:
+    - name: HTTP_ADDRESS
+      value: ":8080"
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: agyn-app-database-urls
+          key: telegram-connector
+    - name: ZITI_IDENTITY_FILE
+      value: /ziti/identity.json
+    - name: SERVICE_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: telegram-connector-service-token
+          key: token
+    - name: GATEWAY_URL
+      value: http://gateway.platform.svc.cluster.local:8080
+    - name: ZITI_SERVICE_NAME
+      value: app-telegram
+    - name: GATEWAY_SERVICE_NAME
+      value: gateway
+    # The chart ships this empty and the connector refuses to start without it.
+    # apps-provision stores the id it got from CreateApp next to the token.
+    - name: APP_ID
+      valueFrom:
+        secretKeyRef:
+          name: telegram-connector-service-token
+          key: app_id
+    - name: TELEGRAM_BASE_URL
+      value: https://api.telegram.org
+    - name: TELEGRAM_POLL_TIMEOUT
+      value: "25s"
+
 runners:
   k8s:
     enabled: true
