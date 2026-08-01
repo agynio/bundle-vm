@@ -70,26 +70,26 @@ helm repo update jetstack openziti minio openfga >/dev/null
 
 # 3) trust-manager (distributes the ziti controller trust bundle).
 log "trust-manager ${TRUST_MANAGER_VERSION}"
-helm upgrade --install trust-manager jetstack/trust-manager \
-	--version "${TRUST_MANAGER_VERSION}" -n cert-manager \
-	--wait --timeout "${HELM_TIMEOUT}" -f "$(values trust-manager)"
-
-# --wait returns when the Deployment reports Ready, which is a step short of the
-# API server being able to reach the validating webhook: the Service's endpoints
-# are registered separately. The ziti-controller chart below creates a Bundle,
-# and admitting one calls that webhook -- so installing into the gap fails with
-# "failed calling webhook trust.cert-manager.io".
-log "waiting for the trust-manager webhook to have endpoints"
-webhook_deadline=$((SECONDS + 120))
-until [ -n "$(kubectl get endpoints trust-manager -n cert-manager \
-	-o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null)" ]; do
-	if [ "${SECONDS}" -ge "${webhook_deadline}" ]; then
-		echo "[install-platform] trust-manager webhook has no endpoints after 120s" >&2
-		kubectl get endpoints trust-manager -n cert-manager -o wide >&2 || true
+# The chart creates its own Bundle alongside the webhook that validates one, and
+# the webhook's caBundle is patched by cert-manager's CA injector a moment after
+# the ValidatingWebhookConfiguration appears. Installing into that window fails
+# with "x509: certificate signed by unknown authority" -- a race that resolves
+# on its own, so it is retried rather than waited out from the outside.
+trust_manager_attempts=6
+for attempt in $(seq 1 "${trust_manager_attempts}"); do
+	if helm upgrade --install trust-manager jetstack/trust-manager \
+		--version "${TRUST_MANAGER_VERSION}" -n cert-manager \
+		--wait --timeout "${HELM_TIMEOUT}" -f "$(values trust-manager)"; then
+		break
+	fi
+	if [ "${attempt}" -eq "${trust_manager_attempts}" ]; then
+		echo "[install-platform] trust-manager install failed after ${trust_manager_attempts} attempts" >&2
+		kubectl get validatingwebhookconfiguration -o wide >&2 || true
 		kubectl get pods -n cert-manager -o wide >&2 || true
 		exit 1
 	fi
-	sleep 2
+	log "trust-manager install failed (attempt ${attempt}); the webhook CA may not be injected yet, retrying"
+	sleep 10
 done
 
 # 4) OpenZiti controller, then the provision Job (which needs the controller
