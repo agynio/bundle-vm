@@ -186,8 +186,15 @@ spec:
                 esac
               }
 
+              # The slug is not cosmetic: CreateApp names the app's ziti service
+              # "app-<slug>", and that is the name the app binds on. "telegram"
+              # is the connector's default slug (architecture/apps/telegram-connector.md)
+              # and matches both the identity ziti-provision enrolls and the
+              # ZITI_SERVICE_NAME it runs with. Registering it as
+              # "telegram-connector" created app-telegram-connector, and the
+              # connector exited with "service 'app-telegram' not found".
               register_app reminders "Reminders" reminders-service-token
-              register_app telegram-connector "Telegram Connector" telegram-connector-service-token
+              register_app telegram "Telegram Connector" telegram-connector-service-token
 
               # --- LLM provider/model (e2e CI parity). The provider endpoint is
               # a placeholder: agents need the model row to exist, not to answer
