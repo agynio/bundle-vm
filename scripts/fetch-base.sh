@@ -60,7 +60,9 @@ fi
 
 mkdir -p "${cache_dir}"
 log "pulling ${ref}"
-if ! oras pull "${ref}" --output "${cache_dir}"; then
+# oras reports progress on stdout, and this script's stdout is the image path
+# its caller captures. Send it to stderr so the path comes back alone.
+if ! oras pull "${ref}" --output "${cache_dir}" >&2; then
 	cat >&2 <<EOF
 [fetch-base] could not pull ${ref}
 
