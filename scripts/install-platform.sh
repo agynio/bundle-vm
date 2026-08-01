@@ -75,22 +75,48 @@ helm upgrade --install trust-manager jetstack/trust-manager \
 	--wait --timeout "${HELM_TIMEOUT}" -f "$(values trust-manager)"
 
 # --wait returns when the Deployment reports Ready, which is a step short of the
-# API server being able to reach the validating webhook: the Service's endpoints
-# are registered separately. The ziti-controller chart below creates a Bundle,
-# and admitting one calls that webhook -- so installing into the gap fails with
-# "failed calling webhook trust.cert-manager.io".
-log "waiting for the trust-manager webhook to have endpoints"
-webhook_deadline=$((SECONDS + 120))
-until [ -n "$(kubectl get endpoints trust-manager -n cert-manager \
-	-o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null)" ]; do
-	if [ "${SECONDS}" -ge "${webhook_deadline}" ]; then
-		echo "[install-platform] trust-manager webhook has no endpoints after 120s" >&2
-		kubectl get endpoints trust-manager -n cert-manager -o wide >&2 || true
-		kubectl get pods -n cert-manager -o wide >&2 || true
-		exit 1
-	fi
-	sleep 2
+# API server being able to *admit* a Bundle. The ziti-controller chart below
+# creates one, and admitting it calls trust-manager's validating webhook.
+#
+# Waiting for the webhook Service's endpoints is not enough: they were already
+# registered every time this failed, and the call still came back "x509:
+# certificate signed by unknown authority" -- the webhook is served with a
+# cert-manager certificate, and the API server cannot verify it until
+# ca-injector has written the CA into the ValidatingWebhookConfiguration.
+#
+# So probe the thing itself with a server-side dry run. Any answer from the
+# webhook, admitting the probe or rejecting it, proves it is reachable and
+# trusted; only a call that never got there is retried.
+probe_file="$(mktemp)"
+cat >"${probe_file}" <<'PROBE'
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: trust-manager-webhook-probe
+spec:
+  sources:
+    - useDefaultCAs: true
+  target:
+    configMap:
+      key: probe.pem
+PROBE
+log "waiting for the trust-manager webhook"
+for attempt in $(seq 1 60); do
+	probe_out="$(kubectl create --dry-run=server -f "${probe_file}" 2>&1)" && break
+	case "${probe_out}" in
+	*"failed calling webhook"*)
+		if [ "${attempt}" -eq 60 ]; then
+			echo "[install-platform] trust-manager webhook never answered: ${probe_out}" >&2
+			kubectl get validatingwebhookconfiguration trust-manager -o yaml >&2 || true
+			kubectl get pods -n cert-manager -o wide >&2 || true
+			exit 1
+		fi
+		sleep 5
+		;;
+	*) break ;;
+	esac
 done
+rm -f "${probe_file}"
 
 # 4) OpenZiti controller, then the provision Job (which needs the controller
 #    API), then the router (which needs the Job's enrollment secret).
