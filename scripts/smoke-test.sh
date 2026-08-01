@@ -25,10 +25,9 @@ log() { printf '[smoke-test] %s\n' "$*"; }
 # Listing one here is a statement that the feature is knowingly unavailable —
 # not that it works. Anything reachable from the console should not be here.
 #
-#   expose       — expose.enabled=false; no e2e covers port exposure
 #   agent-state  — no such service exists in any chart; the Gateway carries a
 #                  target for one that was never built
-SKIP_TARGETS="expose agent-state"
+SKIP_TARGETS="agent-state"
 
 failures=0
 checked=0

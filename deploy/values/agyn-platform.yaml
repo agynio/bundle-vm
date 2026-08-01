@@ -266,7 +266,7 @@ egress:
   image:
     tag: 0.1.3
 
-# --- Disabled services --------------------------------------------
+# --- Remaining service toggles -------------------------------------
 # On. It mounts an *enrolled* OpenZiti identity rather than enrolling itself, so
 # the ziti-provision Job enrols one for it (egress-gateway-ziti-identity) — a
 # pod cannot consume its own one-time token.

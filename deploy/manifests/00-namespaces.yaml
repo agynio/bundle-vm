@@ -12,9 +12,6 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: openfga
----
-# Agent workloads run here (created by bootstrap terraform in the k3d path).
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: agyn-workloads
+# agyn-workloads is deliberately absent: the agyn-platform chart creates it, and
+# a namespace this file made first has no Helm ownership metadata, so the
+# install fails with "exists and cannot be imported into the current release".
