@@ -167,8 +167,16 @@ spec:
                   echo "[apps-provision] CreateApp $1 failed: $RESP" >&2
                   return 1
                 fi
-                body="$(jq -n --arg t "$TOKEN" --arg n "$3" \
-                  '{apiVersion:"v1",kind:"Secret",metadata:{name:$n,namespace:"platform"},type:"Opaque",stringData:{token:$t}}')"
+                # The app's own id, stored beside its token. The connector is
+                # handed it as APP_ID and exits without one, and CreateApp is
+                # the only place it is ever returned.
+                APP_ID="$(echo "$RESP" | jq -r '.app.meta.id // .app.id // empty')"
+                if [ -z "$APP_ID" ]; then
+                  echo "[apps-provision] CreateApp $1 returned no id: $RESP" >&2
+                  return 1
+                fi
+                body="$(jq -n --arg t "$TOKEN" --arg a "$APP_ID" --arg n "$3" \
+                  '{apiVersion:"v1",kind:"Secret",metadata:{name:$n,namespace:"platform"},type:"Opaque",stringData:{token:$t,app_id:$a}}')"
                 code="$(curl -sS -o /dev/null -w '%{http_code}' --cacert "$SA/ca.crt" \
                   -H "Authorization: Bearer $K8S_TOKEN" -H 'content-type: application/json' \
                   -X POST "$K8S/api/v1/namespaces/platform/secrets" -d "$body")"
