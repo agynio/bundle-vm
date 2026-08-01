@@ -161,7 +161,7 @@ spec:
                 fi
                 echo "[apps-provision] registering app $1"
                 RESP="$(gw agynio.api.gateway.v1.AppsGateway/CreateApp \
-                  "{\"organizationId\":\"$ORG_ID\",\"slug\":\"$1\",\"name\":\"$2\",\"visibility\":\"APP_VISIBILITY_INTERNAL\"}")"
+                  "{\"organizationId\":\"$ORG_ID\",\"slug\":\"$1\",\"name\":\"$2\",\"visibility\":\"APP_VISIBILITY_INTERNAL\",\"permissions\":[]}")"
                 TOKEN="$(echo "$RESP" | jq -r '.serviceToken // empty')"
                 if [ -z "$TOKEN" ]; then
                   echo "[apps-provision] CreateApp $1 failed: $RESP" >&2
