@@ -74,6 +74,24 @@ helm upgrade --install trust-manager jetstack/trust-manager \
 	--version "${TRUST_MANAGER_VERSION}" -n cert-manager \
 	--wait --timeout "${HELM_TIMEOUT}" -f "$(values trust-manager)"
 
+# --wait returns when the Deployment reports Ready, which is a step short of the
+# API server being able to reach the validating webhook: the Service's endpoints
+# are registered separately. The ziti-controller chart below creates a Bundle,
+# and admitting one calls that webhook -- so installing into the gap fails with
+# "failed calling webhook trust.cert-manager.io".
+log "waiting for the trust-manager webhook to have endpoints"
+webhook_deadline=$((SECONDS + 120))
+until [ -n "$(kubectl get endpoints trust-manager -n cert-manager \
+	-o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null)" ]; do
+	if [ "${SECONDS}" -ge "${webhook_deadline}" ]; then
+		echo "[install-platform] trust-manager webhook has no endpoints after 120s" >&2
+		kubectl get endpoints trust-manager -n cert-manager -o wide >&2 || true
+		kubectl get pods -n cert-manager -o wide >&2 || true
+		exit 1
+	fi
+	sleep 2
+done
+
 # 4) OpenZiti controller, then the provision Job (which needs the controller
 #    API), then the router (which needs the Job's enrollment secret).
 log "ziti-controller ${ZITI_CONTROLLER_VERSION}"
