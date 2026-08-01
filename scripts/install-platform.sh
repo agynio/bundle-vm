@@ -70,9 +70,27 @@ helm repo update jetstack openziti minio openfga >/dev/null
 
 # 3) trust-manager (distributes the ziti controller trust bundle).
 log "trust-manager ${TRUST_MANAGER_VERSION}"
-helm upgrade --install trust-manager jetstack/trust-manager \
-	--version "${TRUST_MANAGER_VERSION}" -n cert-manager \
-	--wait --timeout "${HELM_TIMEOUT}" -f "$(values trust-manager)"
+# The chart creates its own Bundle alongside the webhook that validates one, and
+# the webhook's caBundle is patched by cert-manager's CA injector a moment after
+# the ValidatingWebhookConfiguration appears. Installing into that window fails
+# with "x509: certificate signed by unknown authority" -- a race that resolves
+# on its own, so it is retried rather than waited out from the outside.
+trust_manager_attempts=6
+for attempt in $(seq 1 "${trust_manager_attempts}"); do
+	if helm upgrade --install trust-manager jetstack/trust-manager \
+		--version "${TRUST_MANAGER_VERSION}" -n cert-manager \
+		--wait --timeout "${HELM_TIMEOUT}" -f "$(values trust-manager)"; then
+		break
+	fi
+	if [ "${attempt}" -eq "${trust_manager_attempts}" ]; then
+		echo "[install-platform] trust-manager install failed after ${trust_manager_attempts} attempts" >&2
+		kubectl get validatingwebhookconfiguration -o wide >&2 || true
+		kubectl get pods -n cert-manager -o wide >&2 || true
+		exit 1
+	fi
+	log "trust-manager install failed (attempt ${attempt}); the webhook CA may not be injected yet, retrying"
+	sleep 10
+done
 
 # --wait returns when the Deployment reports Ready, which is a step short of the
 # API server being able to *admit* a Bundle. The ziti-controller chart below
