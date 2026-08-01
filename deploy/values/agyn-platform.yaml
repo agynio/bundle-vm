@@ -250,12 +250,10 @@ files:
 # OpenZiti-backed services. ziti-management self-enrolls with the JWT from the
 # ziti-management-enrollment secret (ziti-provision Job); runners/orchestrator/
 # gateway then self-enroll via ziti-management.
-# The umbrella chart pins egress 0.1.1 and ziti-management 0.10.12, which
-# predate the OpenZiti provisioning fixes: 0.1.1 never creates the per-rule
-# OpenZiti service (attach then fails with "no services found with the given
-# ids"), and 0.10.12 emits an empty `address` alongside forwardAddress=true,
-# which Ziti rejects. Both are fixed in released images, so pin the newer tags
-# until the chart's dependency versions are bumped upstream.
+# The image tag override this used to carry is gone: it named 0.10.17, and the
+# umbrella now pins 0.10.19, so the override held the image behind its chart.
+# terminal-proxy asks for the Terminal Proxy service type, which 0.10.17 does
+# not know, and exits on startup with "unknown service type 8".
 ziti-management:
   zitiControllerUrl: https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_PORT}}/edge/management/v1
 
