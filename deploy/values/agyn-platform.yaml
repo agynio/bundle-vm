@@ -258,8 +258,6 @@ files:
 # until the chart's dependency versions are bumped upstream.
 ziti-management:
   zitiControllerUrl: https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_PORT}}/edge/management/v1
-  image:
-    tag: 0.10.17
 
 egress:
   enabled: true
