@@ -29,10 +29,6 @@ on:
         description: "Publish to GHCR and the CDN"
         type: boolean
         default: true
-      cdn_only_arch:
-        description: "Skip the build; copy this arch from GHCR to the CDN (amd64 | arm64)"
-        required: false
-        default: ""
 
 concurrency:
   # Two releases writing the same version to the CDN would interleave uploads.
@@ -45,7 +41,6 @@ permissions:
 
 jobs:
   amd64:
-    if: ${{ github.event.inputs.cdn_only_arch == '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -166,55 +161,3 @@ jobs:
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-
-  # Copies an already-published GHCR artifact to the CDN.
-  #
-  # arm64 is baked on a maintainer's machine, because no GitHub runner offers
-  # nested virtualization on arm64 -- but only the *bake* needs that. The upload
-  # does not, and doing it here means the R2 credentials never leave GitHub.
-  # Push to GHCR from the laptop (`scripts/publish.sh arm64 VERSION`), then run
-  # this with cdn_only_arch=arm64.
-  publish-cdn:
-    if: ${{ github.event.inputs.cdn_only_arch != '' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install oras and s5cmd
-        run: |
-          set -euo pipefail
-          curl -fsSL "https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin oras
-          curl -fsSL "https://github.com/peak/s5cmd/releases/download/v2.2.2/s5cmd_2.2.2_Linux-64bit.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin s5cmd
-          oras version && s5cmd version
-
-      - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      # publish-cdn.sh reads artifacts/<arch>, which is exactly what was pushed.
-      - name: Pull the artifact from GHCR
-        env:
-          ARCH: ${{ github.event.inputs.cdn_only_arch }}
-          VERSION: ${{ github.event.inputs.version }}
-        run: |
-          set -euo pipefail
-          case "${ARCH}" in
-          amd64 | arm64) ;;
-          *) echo "::error::cdn_only_arch must be amd64 or arm64, got ${ARCH}"; exit 1 ;;
-          esac
-          mkdir -p "artifacts/${ARCH}"
-          oras pull "ghcr.io/agynio/bundle-vm:${VERSION}-${ARCH}" --output "artifacts/${ARCH}"
-          ls -lh "artifacts/${ARCH}"
-
-      - name: Publish to the CDN
-        env:
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
-        run: |
-          set -euo pipefail
-          args=("${{ github.event.inputs.cdn_only_arch }}" "${{ github.event.inputs.version }}")
-          [ "${{ github.event.inputs.latest }}" = "true" ] && args+=(--latest)
-          scripts/publish-cdn.sh "${args[@]}"
