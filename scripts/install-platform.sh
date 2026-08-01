@@ -74,6 +74,45 @@ helm upgrade --install trust-manager jetstack/trust-manager \
 	--version "${TRUST_MANAGER_VERSION}" -n cert-manager \
 	--wait --timeout "${HELM_TIMEOUT}" -f "$(values trust-manager)"
 
+# Ready is not the same as usable here. trust-manager's validating webhook is
+# served with a cert-manager certificate, and until ca-injector writes the CA
+# into the ValidatingWebhookConfiguration the API server rejects every Bundle
+# with "certificate signed by unknown authority". The ziti-controller chart
+# creates a Bundle about a second after this returns, which is exactly the gap
+# every amd64 bake died in.
+#
+# The probe is a server-side dry run: any answer from the webhook — accepting or
+# rejecting it — proves it is serving, so only a call that never reached it is
+# retried.
+probe_file="$(mktemp)"
+cat >"${probe_file}" <<'PROBE'
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: trust-manager-webhook-probe
+spec:
+  sources:
+    - useDefaultCAs: true
+  target:
+    configMap:
+      key: probe.pem
+PROBE
+log "waiting for the trust-manager webhook"
+for attempt in $(seq 1 60); do
+	probe_out="$(kubectl create --dry-run=server -f "${probe_file}" 2>&1)" && break
+	case "${probe_out}" in
+	*"failed calling webhook"*)
+		if [ "${attempt}" -eq 60 ]; then
+			log "trust-manager webhook never answered: ${probe_out}"
+			exit 1
+		fi
+		sleep 5
+		;;
+	*) break ;;
+	esac
+done
+rm -f "${probe_file}"
+
 # 4) OpenZiti controller, then the provision Job (which needs the controller
 #    API), then the router (which needs the Job's enrollment secret).
 log "ziti-controller ${ZITI_CONTROLLER_VERSION}"
