@@ -36,7 +36,7 @@ ZITI_ROUTER_VERSION=3.0.0-pre5
 POSTGRES_HELM_VERSION=0.1.1
 OPENFGA_VERSION=0.2.56
 MINIO_VERSION=5.4.0
-AGYN_PLATFORM_VERSION=0.6.5
+AGYN_PLATFORM_VERSION=0.9.8
 AGYN_APPS_VERSION=0.1.0
 
 log() { printf '[install-platform] %s\n' "$*"; }
@@ -134,6 +134,15 @@ diagnose_apps_provision() {
 	kubectl -n platform describe job/apps-provision || true
 	kubectl -n platform logs job/apps-provision --tail=100 || true
 	kubectl -n platform logs deployment/gateway --tail=100 --all-containers || true
+	# Whatever is not up is usually the reason, and its own logs say why far
+	# better than the event list does. Guessing from events cost several
+	# 24-minute builds.
+	for pod in $(kubectl -n platform get pods --no-headers |
+		awk '$3 != "Running" && $3 != "Completed" { print $1 }'); do
+		log "--- logs ${pod}"
+		kubectl -n platform logs "${pod}" --tail=50 --all-containers || true
+		kubectl -n platform logs "${pod}" --tail=50 --all-containers --previous 2>/dev/null || true
+	done
 	kubectl -n platform get events --sort-by=.lastTimestamp | tail -40 || true
 }
 

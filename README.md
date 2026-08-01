@@ -67,8 +67,9 @@ microservice.
   (in-cluster MinIO/OpenFGA, mockauth.dev dev OIDC).
 - Chart versions are pinned in `scripts/install-platform.sh`.
 
-Disabled services (bootstrap parity / no provisioning path yet):
-`egress-gateway`, `groups`, `networks`, `expose`, `ncps`, `registryMirror`.
+Every platform service the Gateway routes to is deployed. The only services left
+off are the ones the umbrella chart also defaults to off — `ncps` and
+`registryMirror` — neither of which the Gateway dials.
 
 ## Build
 

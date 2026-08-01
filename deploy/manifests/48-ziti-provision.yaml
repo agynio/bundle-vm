@@ -90,6 +90,23 @@ data:
       [ "$(k8s GET "/api/v1/namespaces/$1/secrets/$2")" = "200" ]
     }
 
+    # Some charts mount an *enrolled* identity rather than a JWT: the pod has no
+    # way to enroll itself, so the identity.json has to exist before it starts.
+    # `ziti edge enroll` consumes the one-time token, which is why this stores
+    # the result — a second enrolment of the same JWT is not possible.
+    store_identity() { # namespace name identity-json
+      body="$(jq -n --arg name "$2" --arg identity "$3" \
+        '{apiVersion:"v1",kind:"Secret",metadata:{name:$name},type:"Opaque",stringData:{"identity.json":$identity}}')"
+      code="$(k8s POST "/api/v1/namespaces/$1/secrets" "$body")"
+      case "$code" in
+      201 | 409) echo "[ziti-provision] identity secret $1/$2: $code" ;;
+      *)
+        echo "[ziti-provision] failed to create identity secret $1/$2: HTTP $code" >&2
+        return 1
+        ;;
+      esac
+    }
+
     store_secret() { # namespace name jwt
       body="$(jq -n --arg name "$2" --arg jwt "$3" \
         '{apiVersion:"v1",kind:"Secret",metadata:{name:$name},type:"Opaque",stringData:{enrollmentJwt:$jwt}}')"
@@ -148,6 +165,31 @@ data:
     ensure_identity gateway ziti ziti-gateway-enrollment --role-attributes gateway-hosts
     ensure_identity orchestrator ziti ziti-orchestrator-enrollment --role-attributes orchestrators
     ensure_identity egress-gateway ziti ziti-egress-gateway-enrollment --role-attributes egress-gateway-hosts
+
+    # Identities whose consumer mounts an enrolled identity.json instead of
+    # enrolling for itself: the egress gateway, and each first-party app.
+    ensure_enrolled_identity() { # name secret-namespace secret-name extra-args...
+      name="$1"; secret_ns="$2"; secret_name="$3"
+      shift 3
+      exists identities "$name" || ziti edge create identity "$name" "$@"
+      secret_exists "$secret_ns" "$secret_name" && return 0
+      jwt="$(ziti edge list identities "name=\"$name\"" -j | jq -r '.data[0].enrollment.ott.jwt // empty')"
+      if [ -z "$jwt" ]; then
+        echo "[ziti-provision] identity $name already enrolled but no secret holds it" >&2
+        return 1
+      fi
+      printf '%s' "$jwt" >"/tmp/$name.jwt"
+      ziti edge enroll --jwt "/tmp/$name.jwt" --out "/tmp/$name.json" >/dev/null
+      store_identity "$secret_ns" "$secret_name" "$(cat "/tmp/$name.json")"
+      rm -f "/tmp/$name.jwt" "/tmp/$name.json"
+    }
+
+    ensure_enrolled_identity egress-gateway-host platform egress-gateway-ziti-identity \
+      --role-attributes egress-gateway-hosts
+    ensure_enrolled_identity app-reminders platform reminders-ziti-identity \
+      --role-attributes app-hosts
+    ensure_enrolled_identity app-telegram platform telegram-connector-ziti-identity \
+      --role-attributes app-hosts
 
     # Intercept configs + services.
     exists configs gateway-intercept-v1 || \

@@ -150,6 +150,37 @@ spec:
                 esac
               fi
 
+              # --- First-party apps. Each authenticates to the Gateway with a
+              # service token it cannot mint for itself, so registration has to
+              # happen here, exactly like the runner above. Keyed on the secret
+              # existing, because CreateApp returns the token once.
+              register_app() { # slug name secret
+                if [ "$(k8s_get "/api/v1/namespaces/platform/secrets/$3")" = "200" ]; then
+                  echo "[apps-provision] $1 already registered"
+                  return 0
+                fi
+                echo "[apps-provision] registering app $1"
+                RESP="$(gw agynio.api.gateway.v1.AppsGateway/CreateApp \
+                  "{\"organizationId\":\"$ORG_ID\",\"slug\":\"$1\",\"name\":\"$2\",\"visibility\":\"APP_VISIBILITY_INTERNAL\",\"permissions\":[]}")"
+                TOKEN="$(echo "$RESP" | jq -r '.serviceToken // empty')"
+                if [ -z "$TOKEN" ]; then
+                  echo "[apps-provision] CreateApp $1 failed: $RESP" >&2
+                  return 1
+                fi
+                body="$(jq -n --arg t "$TOKEN" --arg n "$3" \
+                  '{apiVersion:"v1",kind:"Secret",metadata:{name:$n,namespace:"platform"},type:"Opaque",stringData:{token:$t}}')"
+                code="$(curl -sS -o /dev/null -w '%{http_code}' --cacert "$SA/ca.crt" \
+                  -H "Authorization: Bearer $K8S_TOKEN" -H 'content-type: application/json' \
+                  -X POST "$K8S/api/v1/namespaces/platform/secrets" -d "$body")"
+                case "$code" in
+                  201|409) echo "[apps-provision] $3 stored ($code)" ;;
+                  *) echo "[apps-provision] $3 create failed: HTTP $code" >&2; return 1 ;;
+                esac
+              }
+
+              register_app reminders "Reminders" reminders-service-token
+              register_app telegram-connector "Telegram Connector" telegram-connector-service-token
+
               # --- LLM provider/model (e2e CI parity). The provider endpoint is
               # a placeholder: agents need the model row to exist, not to answer
               # completions.
