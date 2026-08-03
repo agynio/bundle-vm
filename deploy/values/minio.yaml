@@ -13,7 +13,14 @@ persistence:
 resources:
   requests:
     memory: 256Mi
-buckets: []
+# The files service does not create its bucket -- S3_BUCKET must already exist,
+# and without it every upload fails with "The specified bucket does not exist".
+# Bootstrap created it with a minio_s3_bucket Terraform resource; the chart can
+# do it directly, so nothing else has to.
+buckets:
+  - name: agyn-files
+    policy: none
+    purge: false
 users: []
 policies: []
 customCommands: []
