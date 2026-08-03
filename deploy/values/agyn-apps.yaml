@@ -85,6 +85,24 @@ k8s-runner:
   # Tests and platform services dial the bare "k8s-runner" service name
   # (bootstrap parity).
   fullnameOverride: k8s-runner
+  # The workload egress policy excludes every private range, so the overlay has
+  # to be allowed back in by hand or nothing a workload needs is reachable: the
+  # sidecar cannot reach the controller and no agent starts.
+  #
+  # These are the ziti pods' own ports, not their Services'. A NetworkPolicy is
+  # evaluated after the Service DNAT, so 2496 -- the port both Services publish
+  # -- never matches; the controller answers on 1280 and the router on 3022.
+  workloadEgressNetworkPolicy:
+    zitiUnderlay:
+      endpoints:
+        - name: ziti-controller-client
+          namespaceSelector:
+            kubernetes.io/metadata.name: ziti
+          port: 1280
+        - name: ziti-router-edge
+          namespaceSelector:
+            kubernetes.io/metadata.name: ziti
+          port: 3022
   resources:
     requests:
       cpu: 20m
