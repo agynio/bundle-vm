@@ -152,6 +152,21 @@ agents-orchestrator:
       value: "groups:50051"
     - name: NATS_URL
       value: "nats://nats:4222"
+    # The catalog path. IMAGE_PROXY_HOST stays empty until the VM's
+    # containerd trusts the local CA, which the bake installs; rewriting is off
+    # until it is set.
+    - name: AGYND_CLI_INIT_IMAGE
+      value: ghcr.io/agynio/agynd-cli-init:latest
+    - name: AGYN_CLI_INIT_IMAGE
+      value: ghcr.io/agynio/agyn-cli-init:latest
+    - name: IMAGES_ADDRESS
+      value: "images:50051"
+    - name: ORGANIZATIONS_ADDRESS
+      value: "organizations:50051"
+    - name: IMAGE_PROXY_ADDRESS
+      value: "image-proxy:50051"
+    - name: IMAGE_PROXY_HOST
+      value: ""
 
 # Shell access to sandboxes. The CLI connects from the host, so the WebSocket
 # URL it is handed carries the forwarded host port, not the in-cluster one
@@ -300,3 +315,9 @@ ncps:
   enabled: false
 registryMirror:
   enabled: false
+
+agents:
+  env:
+    # Validates image references on write.
+    - name: IMAGES_GRPC_TARGET
+      value: "images:50051"
