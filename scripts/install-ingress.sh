@@ -16,6 +16,7 @@ export DEBIAN_FRONTEND=noninteractive
 ISTIO_VERSION="${ISTIO_VERSION:-1.21.0}"
 BASE_DOMAIN="${BASE_DOMAIN:-agyn.dev}"
 INGRESS_NODEPORT="${INGRESS_NODEPORT:-32443}"
+REGISTRY_HOST="${REGISTRY_HOST:-registry.${BASE_DOMAIN}}"
 
 log() { printf '[install-ingress] %s\n' "$*"; }
 
@@ -158,15 +159,34 @@ kubectl -n istio-gateway wait --for=condition=Ready certificate/wildcard-agyn-de
 # outside every pod's network namespace and uses the host trust store. In
 # production the proxy carries a publicly-trusted certificate and nothing is
 # configured on the node; here it is signed by the CA above, so that CA has to
-# be trusted by the host. This is a property of this VM image, not of the
-# platform: no hosts.toml, no mirror entry, no per-registry configuration.
+# be trusted by the host.
 log "trusting the local CA on the host (for image pulls by containerd)"
 install -d /usr/local/share/ca-certificates
 kubectl -n istio-gateway get secret agyn-dev-ca -o jsonpath='{.data.tls\.crt}' |
 	base64 -d >/usr/local/share/ca-certificates/agyn-local-ca.crt
 update-ca-certificates >/dev/null
-# containerd reads the trust store at startup, so it has to be restarted for a
-# newly installed CA to apply.
+
+# Production serves the registry on 443, so a production reference carries no
+# port. Here the ingress is a NodePort, and a reference naming that port would
+# be a different image than the same content in production: containerd keys its
+# store by the reference it pulled with, so a layer baked under one name is
+# re-pulled under the other. The mirror keeps the port out of every reference —
+# the endpoint is named rather than an address so TLS still sees the hostname
+# the certificate was issued for.
+log "mirroring ${REGISTRY_HOST} to the ingress NodePort"
+cat >/etc/rancher/k3s/registries.yaml <<EOF
+mirrors:
+  ${REGISTRY_HOST}:
+    endpoint:
+      - "https://${REGISTRY_HOST}:${INGRESS_NODEPORT}"
+EOF
+# The node resolves the registry hostname to itself: the pull leaves containerd,
+# reaches the ingress on loopback and comes back to the proxy pod. Production
+# resolves the same name through DNS to the real ingress.
+grep -q "${REGISTRY_HOST}" /etc/hosts || printf '127.0.0.1 %s\n' "${REGISTRY_HOST}" >>/etc/hosts
+
+# containerd reads the trust store and the registry config at startup, so it has
+# to be restarted for either to apply.
 systemctl restart k3s
 until kubectl get --raw=/readyz >/dev/null 2>&1; do sleep 5; done
 

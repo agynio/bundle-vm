@@ -152,11 +152,11 @@ agents-orchestrator:
       value: "groups:50051"
     - name: NATS_URL
       value: "nats://nats:4222"
-    # The catalog path. IMAGE_PROXY_HOST stays empty until the VM's
-    # containerd trusts the local CA, which the bake installs; rewriting is off
-    # until it is set.
-    # Empty until those images are published; a reference that does not
-    # resolve would fail every workload start.
+    # The catalog path. IMAGE_PROXY_HOST carries no port: install-ingress.sh
+    # mirrors this hostname to the ingress NodePort, so a reference baked here
+    # is the same reference production pulls on 443.
+    # The init images stay empty until they are published; a reference that does
+    # not resolve would fail every workload start.
     - name: AGYND_CLI_INIT_IMAGE
       value: ""
     - name: AGYN_CLI_INIT_IMAGE
@@ -168,7 +168,7 @@ agents-orchestrator:
     - name: IMAGE_PROXY_ADDRESS
       value: "image-proxy:50051"
     - name: IMAGE_PROXY_HOST
-      value: ""
+      value: "registry.agyn.dev"
 
 # Shell access to sandboxes. The CLI connects from the host, so the WebSocket
 # URL it is handed carries the forwarded host port, not the in-cluster one
