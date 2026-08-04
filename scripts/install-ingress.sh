@@ -154,4 +154,20 @@ spec:
 EOF
 kubectl -n istio-gateway wait --for=condition=Ready certificate/wildcard-agyn-dev-tls --timeout=300s
 
+# The image proxy is pulled from by the node's container runtime, which is
+# outside every pod's network namespace and uses the host trust store. In
+# production the proxy carries a publicly-trusted certificate and nothing is
+# configured on the node; here it is signed by the CA above, so that CA has to
+# be trusted by the host. This is a property of this VM image, not of the
+# platform: no hosts.toml, no mirror entry, no per-registry configuration.
+log "trusting the local CA on the host (for image pulls by containerd)"
+install -d /usr/local/share/ca-certificates
+kubectl -n istio-gateway get secret agyn-dev-ca -o jsonpath='{.data.tls\.crt}' |
+	base64 -d >/usr/local/share/ca-certificates/agyn-local-ca.crt
+update-ca-certificates >/dev/null
+# containerd reads the trust store at startup, so it has to be restarted for a
+# newly installed CA to apply.
+systemctl restart k3s
+until kubectl get --raw=/readyz >/dev/null 2>&1; do sleep 5; done
+
 log "done"

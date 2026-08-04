@@ -21,6 +21,7 @@ data:
     CREATE DATABASE groups;
     CREATE DATABASE identity;
     CREATE DATABASE images;
+    CREATE DATABASE image_proxy;
     CREATE DATABASE networks;
     CREATE DATABASE llm;
     CREATE DATABASE metering;
