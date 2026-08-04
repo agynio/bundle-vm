@@ -155,10 +155,12 @@ agents-orchestrator:
     # The catalog path. IMAGE_PROXY_HOST stays empty until the VM's
     # containerd trusts the local CA, which the bake installs; rewriting is off
     # until it is set.
+    # Empty until those images are published; a reference that does not
+    # resolve would fail every workload start.
     - name: AGYND_CLI_INIT_IMAGE
-      value: ghcr.io/agynio/agynd-cli-init:latest
+      value: ""
     - name: AGYN_CLI_INIT_IMAGE
-      value: ghcr.io/agynio/agyn-cli-init:latest
+      value: ""
     - name: IMAGES_ADDRESS
       value: "images:50051"
     - name: ORGANIZATIONS_ADDRESS
