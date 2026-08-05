@@ -159,7 +159,7 @@ agents-orchestrator:
     # env block wholesale, so they have to be repeated here or they render to
     # nothing and every workload falls back to a single init container.
     - name: AGYND_CLI_INIT_IMAGE
-      value: "ghcr.io/agynio/agynd-cli-init:0.14.35"
+      value: "ghcr.io/agynio/agynd-cli-init:0.14.37"
     - name: AGYN_CLI_INIT_IMAGE
       value: "ghcr.io/agynio/agyn-cli-init:0.2.22"
     - name: IMAGES_ADDRESS
