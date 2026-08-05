@@ -155,12 +155,13 @@ agents-orchestrator:
     # The catalog path. IMAGE_PROXY_HOST carries no port: install-ingress.sh
     # mirrors this hostname to the ingress NodePort, so a reference baked here
     # is the same reference production pulls on 443.
-    # The init images stay empty until they are published; a reference that does
-    # not resolve would fail every workload start.
+    # The umbrella pins the two platform init images; the overlay replaces this
+    # env block wholesale, so they have to be repeated here or they render to
+    # nothing and every workload falls back to a single init container.
     - name: AGYND_CLI_INIT_IMAGE
-      value: ""
+      value: "ghcr.io/agynio/agynd-cli-init:0.14.34"
     - name: AGYN_CLI_INIT_IMAGE
-      value: ""
+      value: "ghcr.io/agynio/agyn-cli-init:0.2.20"
     - name: IMAGES_ADDRESS
       value: "images:50051"
     - name: ORGANIZATIONS_ADDRESS
