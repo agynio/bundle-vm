@@ -206,16 +206,19 @@ llm-proxy:
 
 # Agents send spans to tracing.ziti:443 over the overlay.
 tracing:
+  replicaCount: 1
   extraEnvVars:
     - name: ZITI_ENABLED
       value: "true"
 
 console-app:
+  replicaCount: 1
   oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
   oidcClientId: client_4XUh4_1VfUzpfYkN
   oidcResource: ""
 
 chat-app:
+  replicaCount: 1
   oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
   oidcClientId: client_MU95KU3gHQf5Ir7p
   oidcResource: ""
@@ -223,11 +226,13 @@ chat-app:
   mediaProxyUrl: https://media.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
 
 tracing-app:
+  replicaCount: 1
   oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
   oidcClientId: client_tzqVFAYTvpkfUzy5
   oidcResource: ""
 
 media-proxy:
+  replicaCount: 1
   mediaProxy:
     oidcIssuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
     oidcClientId: client_MU95KU3gHQf5Ir7p
@@ -243,17 +248,22 @@ nats:
 # otherwise). NOTE: these two used to live in separate blocks and the second
 # silently overrode the first — keep them merged.
 notifications-redis:
+  # Read replicas buy nothing on one node; the primary still serves.
+  replica:
+    replicaCount: 1
   image:
     digest: sha256:341edafd5622a1e47e4b3ab379913de84ea4a50d534f40aaa903a3825e0e1cf1
   auth:
     enabled: false
 
 authorization:
+  replicaCount: 1
   # authorization's migration Job provisions the OpenFGA store/model and
   # writes their IDs into the authorization-openfga secret.
   openfgaApiUrl: http://openfga.openfga.svc.cluster.local:8080
 
 files:
+  replicaCount: 1
   securityContext:
     runAsUser: 65532
     runAsGroup: 65532
@@ -272,6 +282,7 @@ files:
 # terminal-proxy asks for the Terminal Proxy service type, which 0.10.17 does
 # not know, and exits on startup with "unknown service type 8".
 ziti-management:
+  replicaCount: 1
   zitiControllerUrl: https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_PORT}}/edge/management/v1
 
 egress:
@@ -290,6 +301,7 @@ egress-gateway:
 # database (shared Postgres + db-urls secret) and an arm64 image (upstream only
 # publishes amd64 — see the multi-arch note in the README).
 groups:
+  replicaCount: 1
   enabled: true
   # The subchart's appVersion resolves to 0.1.0, which was published amd64-only
   # and leaves every arm64 pod in ImagePullBackOff. 0.1.1 is the first tag built
@@ -302,6 +314,7 @@ groups:
 # "produced zero addresses" once the console asks for it. ListServicesByTag,
 # the API this needs, ships in the pinned ziti-management.
 networks:
+  replicaCount: 1
   enabled: true
   # Pinned because the umbrella's vendored networks chart still carries
   # appVersion 0.1.0, and that image is a single amd64 manifest — on this arm64
@@ -312,6 +325,7 @@ networks:
 # On, like every other platform service the Gateway routes to. Its database is
 # already provisioned in the shared Postgres and named in the db-urls secret.
 expose:
+  replicaCount: 1
   enabled: true
 ncps:
   enabled: false
@@ -319,7 +333,92 @@ registryMirror:
   enabled: false
 
 agents:
+  replicaCount: 1
   env:
     # Validates image references on write.
     - name: IMAGES_GRPC_TARGET
       value: "images:50051"
+
+metering:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+images:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+image-proxy:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+threads:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+chat:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+users:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+organizations:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+identity:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+apps:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+runners:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+secrets:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+llm:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+token-counting:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
+
+notifications:
+  # One replica: this is a single-node VM, so a second buys no failover -
+  # it only competes for the same CPU and memory. Production installs keep
+  # the chart default.
+  replicaCount: 1
