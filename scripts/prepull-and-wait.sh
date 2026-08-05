@@ -26,6 +26,21 @@ pending_workloads() {
 		awk '{ split($3, ready, "/"); if (ready[1] != ready[2]) print $1 "/" $2 "(sts " $3 ")" }'
 }
 
+# The pod list alone names what did not come up but never why, so a build that
+# fails here is diagnosed by rebuilding with a change that prints more.
+dump_unready_pods() {
+	kubectl get pods -A --no-headers 2>/dev/null |
+		awk '$4 != "Running" && $4 != "Completed" && $4 != "Succeeded" { print $1 " " $2 }' |
+		while read -r namespace pod; do
+			log "--- describe ${namespace}/${pod}"
+			kubectl describe pod -n "${namespace}" "${pod}" 2>&1 | tail -40 || true
+			log "--- logs ${namespace}/${pod}"
+			kubectl logs -n "${namespace}" "${pod}" --all-containers --tail=80 2>&1 || true
+			log "--- previous logs ${namespace}/${pod}"
+			kubectl logs -n "${namespace}" "${pod}" --all-containers --previous --tail=80 2>&1 || true
+		done
+}
+
 deadline=$((SECONDS + CONVERGE_TIMEOUT))
 stable=0
 while [ "${SECONDS}" -lt "${deadline}" ]; do
@@ -48,6 +63,7 @@ if [ "${stable}" -lt "${STABLE_CHECKS}" ]; then
 	log "cluster did not converge within ${CONVERGE_TIMEOUT}s"
 	kubectl get pods -A || true
 	kubectl get deploy,statefulset -A || true
+	dump_unready_pods
 	exit 1
 fi
 
