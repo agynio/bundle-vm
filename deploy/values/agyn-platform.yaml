@@ -161,7 +161,7 @@ agents-orchestrator:
     - name: AGYND_CLI_INIT_IMAGE
       value: "ghcr.io/agynio/agynd-cli-init:0.14.35"
     - name: AGYN_CLI_INIT_IMAGE
-      value: "ghcr.io/agynio/agyn-cli-init:0.2.21"
+      value: "ghcr.io/agynio/agyn-cli-init:0.2.22"
     - name: IMAGES_ADDRESS
       value: "images:50051"
     - name: ORGANIZATIONS_ADDRESS

@@ -14,6 +14,11 @@ set -euo pipefail
 # OpenFGA endpoints), and `agyn local start` has since rewritten the bootstrap
 # token and the browser-facing ports. Re-rendering would silently revert both.
 #
+# --values overlays a file on top of the reused values, for settings the image
+# cannot know: a real OIDC issuer instead of the bundled mock one, say. It is an
+# overlay, not a replacement — anything it does not name keeps the value the
+# bake or `agyn local start` gave it.
+#
 # What this does NOT do: upgrade k3s, Istio, cert-manager, OpenZiti, or Postgres.
 # Those come from the image, and moving them is what a new image is for.
 
@@ -24,9 +29,36 @@ PLATFORM_CHART="${AGYN_PLATFORM_CHART:-oci://ghcr.io/agynio/charts/agyn-platform
 APPS_CHART="${AGYN_APPS_CHART:-oci://ghcr.io/agynio/charts/agyn-apps}"
 HELM_TIMEOUT="${AGYN_HELM_TIMEOUT:-15m}"
 
-# Empty means "whatever the registry says is newest".
-platform_version="${1:-}"
-apps_version="${2:-}"
+# Named rather than positional: a values path and a chart version are easy to
+# transpose, and the failure would be a silent no-op or a wrong chart.
+platform_version=""
+apps_version=""
+extra_values=""
+while [ "$#" -gt 0 ]; do
+	case "${1}" in
+	--values)
+		extra_values="${2:-}"
+		shift 2
+		;;
+	--platform-version)
+		platform_version="${2:-}"
+		shift 2
+		;;
+	--apps-version)
+		apps_version="${2:-}"
+		shift 2
+		;;
+	*)
+		echo "unknown argument: ${1}" >&2
+		exit 64
+		;;
+	esac
+done
+
+if [ -n "${extra_values}" ] && [ ! -r "${extra_values}" ]; then
+	echo "values file not readable: ${extra_values}" >&2
+	exit 66
+fi
 
 log() { printf '[upgrade-platform] %s\n' "$*"; }
 
@@ -63,6 +95,11 @@ upgrade() {
 
 	set -- upgrade "${release}" "${chart}" -n "${NAMESPACE}" \
 		--reuse-values --wait --timeout "${HELM_TIMEOUT}"
+	# Overlaid on top of --reuse-values, so the caller's file changes only what
+	# it names and everything the bake configured survives.
+	if [ -n "${extra_values}" ]; then
+		set -- "$@" -f "${extra_values}"
+	fi
 	if [ -n "${want}" ]; then
 		set -- "$@" --version "${want}"
 		log "${release}: ${before:-unknown} -> ${want}"
