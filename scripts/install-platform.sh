@@ -178,18 +178,6 @@ fi
 
 # 6) The platform umbrella. No --wait: migrations and self-enrollment retry on
 #    their own schedules; prepull-and-wait.sh watches overall convergence.
-# Postgres used to be applied as a manifest, so an existing VM has it without
-# helm's ownership metadata and the release refuses to take it over. Adopting
-# is safe: the chart renders the same objects, under the same names.
-for object in statefulset/platform-postgres service/platform-postgres configmap/platform-postgres-init; do
-	kubectl -n platform get "${object}" >/dev/null 2>&1 || continue
-	kubectl -n platform annotate --overwrite "${object}" \
-		meta.helm.sh/release-name=agyn-platform \
-		meta.helm.sh/release-namespace=platform >/dev/null
-	kubectl -n platform label --overwrite "${object}" \
-		app.kubernetes.io/managed-by=Helm >/dev/null
-done
-
 log "agyn-platform ${AGYN_PLATFORM_VERSION}"
 helm upgrade --install agyn-platform oci://ghcr.io/agynio/charts/agyn-platform \
 	--version "${AGYN_PLATFORM_VERSION}" -n platform \
