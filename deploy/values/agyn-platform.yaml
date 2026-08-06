@@ -348,10 +348,6 @@ registryMirror:
 
 agents:
   replicaCount: 1
-  env:
-    # Validates image references on write.
-    - name: IMAGES_GRPC_TARGET
-      value: "images:50051"
 
 metering:
   # One replica: this is a single-node VM, so a second buys no failover -
