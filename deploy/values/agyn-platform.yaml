@@ -8,6 +8,19 @@
 
 # The chart's lookup-based secret contract check requires cluster access at
 # render time; secrets are consumed at runtime via secretKeyRef.
+
+# The umbrella owns Postgres: one chart installs the platform, so a database a
+# service needs is created by the same release that adds the service.
+postgres:
+  enabled: true
+  persistence:
+    size: 20Gi
+  # The apps layer's own databases. Declared here because the umbrella creates
+  # every database on this VM, and the apps chart has no postgres of its own.
+  databases:
+    reminders: reminders
+    telegram-connector: telegram_connector
+
 validation:
   requireExistingSecrets: false
 
