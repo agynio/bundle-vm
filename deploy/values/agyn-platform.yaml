@@ -78,6 +78,23 @@ platform:
 keycloak:
   enabled: true
   externalUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+  # The chart owns its own routing and cluster wiring. It has to: the bake wipes
+  # deploy/ from the VM, so anything left in a manifest here is applied once at
+  # build time and never again -- an upgrade would bring Keycloak up with no
+  # route to it, no DNS for the issuer and no CA for the services verifying
+  # tokens against it.
+  routing:
+    enabled: true
+    host: auth.{{BASE_DOMAIN}}
+  wiring:
+    enabled: true
+    caBundle:
+      enabled: true
+    corednsRewrite:
+      enabled: true
+    ingressHostPort:
+      enabled: true
+      port: {{INGRESS_HOST_PORT}}
   appOrigins:
     console: https://console.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
     chat: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}

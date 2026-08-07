@@ -16,7 +16,6 @@ export DEBIAN_FRONTEND=noninteractive
 ISTIO_VERSION="${ISTIO_VERSION:-1.21.0}"
 BASE_DOMAIN="${BASE_DOMAIN:-agyn.dev}"
 INGRESS_NODEPORT="${INGRESS_NODEPORT:-32443}"
-INGRESS_HOST_PORT="${INGRESS_HOST_PORT:-2496}"
 REGISTRY_HOST="${REGISTRY_HOST:-registry.${BASE_DOMAIN}}"
 
 log() { printf '[install-ingress] %s\n' "$*"; }
@@ -74,24 +73,7 @@ helm upgrade --install istiod istio/istiod --version "${ISTIO_VERSION}" \
 	--set pilot.resources.requests.memory=96Mi ||
 	die_with_state istiod istio-system
 
-# The OIDC issuer is a single URL used from the browser AND from inside the
-# cluster, so it carries the host's port. In-cluster that name resolves to this
-# Service (coredns-custom), which therefore has to answer on that port and hand
-# it to the same TLS listener. Skipped when the host port is one the Service
-# already publishes, since a duplicate port is rejected.
-hostport_entry=""
-case "${INGRESS_HOST_PORT}" in
-443 | 80 | 15021) ;;
-*)
-	hostport_entry="
-    - name: https-hostport
-      port: ${INGRESS_HOST_PORT}
-      protocol: TCP
-      targetPort: 443"
-	;;
-esac
-
-log "istio ingress gateway ${ISTIO_VERSION} (NodePort ${INGRESS_NODEPORT}, host port ${INGRESS_HOST_PORT})"
+log "istio ingress gateway ${ISTIO_VERSION} (NodePort ${INGRESS_NODEPORT})"
 cat >/tmp/gw-values.yaml <<EOF
 name: istio-ingressgateway
 service:
@@ -111,7 +93,7 @@ service:
       port: 443
       protocol: TCP
       targetPort: 443
-      nodePort: ${INGRESS_NODEPORT}${hostport_entry}
+      nodePort: ${INGRESS_NODEPORT}
 EOF
 helm upgrade --install istio-gateway istio/gateway --version "${ISTIO_VERSION}" \
 	-n istio-gateway --wait --timeout 15m -f /tmp/gw-values.yaml ||

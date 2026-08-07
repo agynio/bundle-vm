@@ -1,29 +1,6 @@
 # Platform UI/API routing (ported from bootstrap stacks/platform
 # VirtualServices). UIs route /api and /socket.io to the gateway service and
 # everything else to the app itself.
-# Keycloak. Reached on this host from the browser and, through the coredns
-# rewrite plus the ingress Service's host port, from inside the cluster too —
-# the issuer has to be one URL that resolves from both.
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: keycloak
-  namespace: istio-gateway
-spec:
-  hosts:
-    - "auth.{{BASE_DOMAIN}}"
-  gateways:
-    - platform-gateway
-  http:
-    - match:
-        - uri:
-            prefix: /
-      route:
-        - destination:
-            host: keycloak.platform.svc.cluster.local
-            port:
-              number: 8080
----
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
