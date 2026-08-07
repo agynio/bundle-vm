@@ -12,12 +12,17 @@ set -euo pipefail
 # Values are reused from the installed release rather than re-rendered. The bake
 # configured this cluster (OpenZiti addresses, OIDC, the in-cluster MinIO and
 # OpenFGA endpoints), and `agyn local start` has since rewritten the bootstrap
-# token and the browser-facing ports. Re-rendering would silently revert both.
+# token. Re-rendering would silently revert it.
+#
+# Reusing values does NOT preserve the browser-facing port, because
+# set-ingress-port.sh wrote that with `kubectl set env` rather than through the
+# release. Helm rewrites those Deployments from chart values, so the port is
+# re-applied at the end of this script.
 #
 # --values overlays a file on top of the reused values, for settings the image
-# cannot know: a real OIDC issuer instead of the bundled mock one, say. It is an
-# overlay, not a replacement — anything it does not name keeps the value the
-# bake or `agyn local start` gave it.
+# cannot know: an external OIDC issuer instead of the bundled Keycloak, say. It
+# is an overlay, not a replacement — anything it does not name keeps the value
+# the bake or `agyn local start` gave it.
 #
 # What this does NOT do: upgrade k3s, Istio, cert-manager, OpenZiti, or Postgres.
 # Those come from the image, and moving them is what a new image is for.
@@ -118,6 +123,26 @@ upgrade() {
 
 upgrade agyn-platform "${PLATFORM_CHART}" "${platform_version}"
 upgrade agyn-apps "${APPS_CHART}" "${apps_version}"
+
+# Helm rewrites every Deployment it owns back to what the chart says, and the
+# browser-facing URLs are not in the chart: set-ingress-port.sh wrote them with
+# `kubectl set env` when the host chose a port. An upgrade reverts them to the
+# chart's default port, which now includes the OIDC issuer — leaving the Gateway
+# fetching discovery from a port the ingress no longer publishes, and every
+# login broken.
+#
+# The port itself survives, because it lives on the istio-ingressgateway
+# Service and no chart owns that. So it is read back from there and re-applied.
+# Idempotent: on a VM still using the default port this changes nothing.
+host_port="$(kubectl -n istio-gateway get svc istio-ingressgateway \
+	-o jsonpath='{.spec.ports[?(@.name=="https-hostport")].port}' 2>/dev/null || true)"
+if [ -n "${host_port}" ] && [ -x /opt/agyn/set-ingress-port.sh ]; then
+	log "re-applying the ingress host port ${host_port}"
+	/opt/agyn/set-ingress-port.sh "${host_port}"
+elif [ -n "${host_port}" ]; then
+	log "WARNING: host port ${host_port} is in use but /opt/agyn/set-ingress-port.sh is missing;"
+	log "         browser-facing URLs now point at the chart's default port"
+fi
 
 log "releases:"
 helm list -n "${NAMESPACE}"

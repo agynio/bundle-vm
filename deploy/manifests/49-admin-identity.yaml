@@ -2,8 +2,13 @@
 #
 # CLUSTER_ADMIN_TOKEN lets the Gateway answer as a fixed identity without anyone
 # signing in, which is what makes an unattended install usable. But nothing
-# creates that identity: no OIDC login happens, so Users never provisions it and
-# Identity never registers it. Everything that resolves an identity then fails
+# creates that identity: no OIDC login happens for it, so Users never provisions
+# it and Identity never registers it.
+#
+# Still needed now that Keycloak ships in the bundle. A person signing in as
+# admin@agyn.dev gets a different identity, provisioned by the Users service and
+# made cluster admin by FIRST_ADMIN_EMAIL; this one exists for the unattended
+# path, which never signs in at all. Everything that resolves an identity then fails
 # on it -- reading a nickname, naming an agent, listing members -- while the
 # Gateway keeps happily authenticating.
 #

@@ -3,8 +3,8 @@
 #
 # Values are a local port of the canonical contract file
 # infrastructure/terraform/components/platform/values/agyn-platform.yaml.tftpl.
-# Local substitutions: in-cluster MinIO for S3, in-cluster OpenFGA, bootstrap
-# mockauth.dev dev OIDC issuer.
+# Local substitutions: in-cluster MinIO for S3, in-cluster OpenFGA, the
+# umbrella's bundled Keycloak as the OIDC issuer.
 
 # The chart's lookup-based secret contract check requires cluster access at
 # render time; secrets are consumed at runtime via secretKeyRef.
@@ -42,7 +42,12 @@ openfga:
 minio:
   enabled: false
 
-# OIDC (bootstrap dev defaults: public mockauth.dev mock issuer).
+# OIDC: the umbrella's bundled Keycloak, reached on the same host:port the
+# browser uses. coredns-custom points auth.{{BASE_DOMAIN}} at the ingress and
+# install-ingress.sh gives that Service the host port, so this one URL resolves
+# from the browser and from inside the cluster. It has to be one URL: the
+# Gateway fetches discovery server-side and zitadel/oidc refuses a document
+# whose issuer differs from the URL it was fetched from.
 platform:
   # Connection details for the separately installed instance above. These
   # belong here, not under openfga.*: that key configures the upstream OpenFGA
@@ -52,8 +57,8 @@ platform:
     storeId: ""
     modelId: ""
   oidc:
-    issuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
-    clientId: client_MU95KU3gHQf5Ir7p
+    issuerUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+    clientId: agyn-chat
     audience: ""
   externalUrls:
     # Single source of truth: the Gateway hands this to clients when it issues
@@ -63,14 +68,30 @@ platform:
     # this VM.
     terminalProxyWebSocket: wss://terminal.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/terminal
 
+# The bundled OIDC provider. externalUrl is the issuer above; the app origins
+# become the redirect URIs of one client per app.
+#
+# The realm is imported only when it does not already exist — Keycloak's
+# --import-realm is create-once and the strategy cannot be overridden — so
+# editing this reaches an existing VM only after the keycloak database is
+# dropped, or through the Admin API.
+keycloak:
+  enabled: true
+  externalUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+  appOrigins:
+    console: https://console.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+    chat: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+    tracing: https://tracing.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+    sandboxes: https://sandboxes.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+
 gateway:
   # One replica: this is a single-node VM, so a second buys no failover — it
   # only competes for the same CPU and memory. Production installs keep the
   # chart default, where leader election and spare capacity are real.
   replicaCount: 1
   gateway:
-    oidcIssuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
-    oidcClientId: client_MU95KU3gHQf5Ir7p
+    oidcIssuerUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+    oidcClientId: agyn-chat
     oidcAudience: ""
     # Build-time bootstrap token, used by the apps-provision Job while the
     # image is built, and replaced on first boot by one the host generates for
@@ -92,6 +113,21 @@ gateway:
   extraEnvVars:
     - name: ZITI_ENABLED
       value: "true"
+    # The issuer is served by the ingress under the local CA, and discovery,
+    # JWKS and userinfo are all fetched from here. SSL_CERT_DIR is additive, so
+    # the system roots survive; SSL_CERT_FILE would replace them and break
+    # outbound TLS to the LLM providers.
+    - name: SSL_CERT_DIR
+      value: /etc/ssl/certs:/etc/agyn-ca
+  extraVolumeMounts:
+    - name: agyn-local-ca
+      mountPath: /etc/agyn-ca
+      readOnly: true
+  extraVolumes:
+    - name: agyn-local-ca
+      configMap:
+        # Copied out of the istio-gateway namespace by install-platform.sh.
+        name: agyn-local-ca
 
 # OpenZiti must be switched on explicitly — ZITI_ENABLED defaults to false in
 # these charts, and bootstrap (stacks/platform) sets it to "true". Without it
@@ -227,37 +263,50 @@ tracing:
 
 console-app:
   replicaCount: 1
-  oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
-  oidcClientId: client_4XUh4_1VfUzpfYkN
+  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+  oidcClientId: agyn-console
   oidcResource: ""
 
 chat-app:
   replicaCount: 1
-  oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
-  oidcClientId: client_MU95KU3gHQf5Ir7p
+  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+  oidcClientId: agyn-chat
   oidcResource: ""
   origin: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
   mediaProxyUrl: https://media.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
 
 tracing-app:
   replicaCount: 1
-  oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
-  oidcClientId: client_tzqVFAYTvpkfUzy5
+  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+  oidcClientId: agyn-tracing
   oidcResource: ""
 
 sandboxes-app:
   replicaCount: 1
-  oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
-  oidcClientId: client_s3P9y8f8lAAS2cQR
+  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+  oidcClientId: agyn-sandboxes
   oidcResource: ""
 
 media-proxy:
   replicaCount: 1
   mediaProxy:
-    oidcIssuerUrl: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
-    oidcClientId: client_MU95KU3gHQf5Ir7p
+    oidcIssuerUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+    oidcClientId: agyn-chat
     oidcAudience: ""
     corsAllowedOrigin: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+  # Verifies tokens itself, so it fetches discovery from the issuer the same way
+  # the Gateway does and needs the same local CA.
+  extraEnvVars:
+    - name: SSL_CERT_DIR
+      value: /etc/ssl/certs:/etc/agyn-ca
+  extraVolumeMounts:
+    - name: agyn-local-ca
+      mountPath: /etc/agyn-ca
+      readOnly: true
+  extraVolumes:
+    - name: agyn-local-ca
+      configMap:
+        name: agyn-local-ca
 
 # Event bus.
 nats:

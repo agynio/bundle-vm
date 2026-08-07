@@ -2,6 +2,10 @@
 # The Ziti controller bakes ziti.<domain> into enrollment JWTs; router pods and
 # SDK clients must resolve these names in-cluster (public DNS resolves them to
 # 127.0.0.1). Ported from bootstrap stacks/deps coredns_ziti_rewrites.
+#
+# auth.<domain> is here for the same reason: it is the OIDC issuer, and the
+# Gateway and Media Proxy fetch discovery, JWKS and userinfo from it from inside
+# the cluster, using the very URL the browser was sent to.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -12,6 +16,7 @@ data:
     rewrite name ziti.{{BASE_DOMAIN}} ziti-controller-client.ziti.svc.cluster.local
     rewrite name ziti-mgmt.{{BASE_DOMAIN}} ziti-controller-mgmt.ziti.svc.cluster.local
     rewrite name ziti-router.{{BASE_DOMAIN}} ziti-router-edge.ziti.svc.cluster.local
+    rewrite name auth.{{BASE_DOMAIN}} istio-ingressgateway.istio-gateway.svc.cluster.local
     rewrite name chat.{{BASE_DOMAIN}} istio-ingressgateway.istio-gateway.svc.cluster.local
     rewrite name tracing.{{BASE_DOMAIN}} istio-ingressgateway.istio-gateway.svc.cluster.local
     rewrite name console.{{BASE_DOMAIN}} istio-ingressgateway.istio-gateway.svc.cluster.local

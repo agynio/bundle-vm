@@ -51,6 +51,16 @@ Note: the OpenZiti controller advertises `ziti.<domain>:<INGRESS_HOST_PORT>` in
 enrollment JWTs, so external Ziti clients must reach the VM on exactly that
 host port. In-cluster clients use the CoreDNS rewrites instead.
 
+The OIDC issuer is the exception to "in-cluster clients ignore the host port".
+It is one URL — `https://auth.agyn.dev:<INGRESS_HOST_PORT>/realms/agyn` — used
+both by the browser and, server-side, by the Gateway and Media Proxy, which
+fetch discovery, JWKS and userinfo from it; zitadel/oidc rejects a discovery
+document whose issuer differs from the URL it was fetched from, so the two
+sides cannot name different ports. `install-ingress.sh` therefore gives the
+`istio-ingressgateway` Service a second port equal to `INGRESS_HOST_PORT`,
+targeting the same container port 443, and `set-ingress-port.sh` moves it when
+the host picks another port.
+
 ## Deploy layout
 
 The platform is deployed as the **single unified `agyn-platform` umbrella
@@ -64,7 +74,7 @@ microservice.
 - `deploy/values/` — one Helm values file per release. `agyn-platform.yaml` is
   a local port of the canonical contract file
   `infrastructure/terraform/components/platform/values/agyn-platform.yaml.tftpl`
-  (in-cluster MinIO/OpenFGA, mockauth.dev dev OIDC).
+  (in-cluster MinIO/OpenFGA, the umbrella's bundled Keycloak for OIDC).
 - Chart versions are pinned in `scripts/install-platform.sh`.
 
 Every platform service the Gateway routes to is deployed. The only services left
@@ -140,3 +150,18 @@ open https://console.agyn.dev:2496
 The TLS certificate chains to the in-image "Agyn Local CA"
 (`agyn local ca install`, or extract it from the `istio-gateway/agyn-dev-ca`
 secret).
+
+Sign in with **`admin` / `admin`**. Authentication is the Keycloak the umbrella
+bundles, served at `https://auth.agyn.dev:2496`, with a realm imported from the
+chart: one client per app (`agyn-console`, `agyn-chat`, `agyn-tracing`,
+`agyn-sandboxes`) and a single user, `admin@agyn.dev`. That address is also
+`users.FIRST_ADMIN_EMAIL`, so the first sign-in takes cluster admin.
+
+The realm is imported only when it does not already exist — Keycloak's
+`--import-realm` is create-once and the strategy cannot be overridden — so
+editing it in the chart reaches an existing VM only after the `keycloak`
+database is dropped, or through the Admin API.
+
+The Gateway's `CLUSTER_ADMIN_TOKEN` identity is unrelated and unchanged: it is
+what the CLI and the e2e suites authenticate as, and nothing ever signs into
+it.

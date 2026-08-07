@@ -36,7 +36,7 @@ ZITI_ROUTER_VERSION=3.0.0-pre5
 POSTGRES_HELM_VERSION=0.1.1
 OPENFGA_VERSION=0.2.56
 MINIO_VERSION=5.4.0
-AGYN_PLATFORM_VERSION=0.10.7
+AGYN_PLATFORM_VERSION=0.11.0
 AGYN_APPS_VERSION=0.1.4
 
 log() { printf '[install-platform] %s\n' "$*"; }
@@ -59,6 +59,22 @@ while IFS= read -r -d '' manifest; do
 	log "  apply ${manifest}"
 	render "${manifest}" | kubectl apply --validate=false -f -
 done < <(find "${DEPLOY_DIR}/manifests" -maxdepth 1 -name '*.yaml' -print0 | sort -z)
+
+# 1b) The local CA, where pods can mount it.
+#
+# install-ingress.sh trusts this CA on the *host*, for containerd's image pulls.
+# The Gateway and Media Proxy need it too: the OIDC issuer is served by the
+# ingress under this CA, and they fetch discovery, JWKS and userinfo from it
+# themselves. A pod cannot read a Secret from another namespace, so the
+# certificate is copied in as a ConfigMap -- it is a public certificate, and
+# nothing here needs the CA key.
+log "publishing the local CA to the platform namespace"
+kubectl -n istio-gateway get secret agyn-dev-ca -o jsonpath='{.data.tls\.crt}' |
+	base64 -d >/tmp/agyn-local-ca.crt
+kubectl -n platform create configmap agyn-local-ca \
+	--from-file=ca.crt=/tmp/agyn-local-ca.crt \
+	--dry-run=client -o yaml | kubectl apply -f -
+rm -f /tmp/agyn-local-ca.crt
 
 # 2) Chart repositories.
 log "adding helm repositories"

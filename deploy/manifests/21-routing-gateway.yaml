@@ -21,6 +21,7 @@ spec:
       hosts:
         - "{{BASE_DOMAIN}}"
         - "argocd.{{BASE_DOMAIN}}"
+        - "auth.{{BASE_DOMAIN}}"
         - "chat.{{BASE_DOMAIN}}"
         - "console.{{BASE_DOMAIN}}"
         - "gateway.{{BASE_DOMAIN}}"
