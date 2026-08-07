@@ -208,6 +208,25 @@ data:
     exists services tracing || \
       ziti edge create service tracing --configs tracing-intercept-v1 --role-attributes tracing
 
+    # Vendor intercept services, one per vendor. Static, not per-rule: the
+    # vendor set is closed, so nothing is provisioned per organization,
+    # environment, or attachment. What varies per workload is only which of
+    # these it may dial, expressed by the llm-native-<vendor> role attribute
+    # the orchestrator stamps on the workload identity. No host.v1 -- the
+    # proxy binds these through the SDK exactly as it binds llm-proxy.
+    exists configs llm-intercept-claude-intercept-v1 || \
+      ziti edge create config llm-intercept-claude-intercept-v1 intercept.v1 \
+        '{"addresses":["api.anthropic.com"],"protocols":["tcp"],"portRanges":[{"low":443,"high":443}]}'
+    exists configs llm-intercept-codex-intercept-v1 || \
+      ziti edge create config llm-intercept-codex-intercept-v1 intercept.v1 \
+        '{"addresses":["chatgpt.com"],"protocols":["tcp"],"portRanges":[{"low":443,"high":443}]}'
+    exists services llm-intercept-claude || \
+      ziti edge create service llm-intercept-claude \
+        --configs llm-intercept-claude-intercept-v1 --role-attributes llm-intercept-services
+    exists services llm-intercept-codex || \
+      ziti edge create service llm-intercept-codex \
+        --configs llm-intercept-codex-intercept-v1 --role-attributes llm-intercept-services
+
     # Service policies (bootstrap stacks/ziti parity).
     sp() { # name type identity-roles service-roles
       exists service-policies "$1" || \
@@ -220,6 +239,12 @@ data:
     sp llm-proxy-bind Bind '#llm-proxy-hosts' '@llm-proxy'
     sp egress-gateway-bind Bind '#egress-gateway-hosts' '#egress-services'
     sp agents-dial-llm-proxy Dial '#agents' '@llm-proxy'
+    sp llm-proxy-bind-intercept Bind '#llm-proxy-hosts' '#llm-intercept-services'
+    # A workload in platform mode carries neither attribute, so its vendor
+    # traffic is not intercepted at all -- it leaves the pod as any unmatched
+    # destination does.
+    sp native-claude-dial Dial '#llm-native-claude' '@llm-intercept-claude'
+    sp native-codex-dial Dial '#llm-native-codex' '@llm-intercept-codex'
     sp tracing-bind Bind '#tracing-hosts' '@tracing'
     sp agents-dial-tracing Dial '#agents' '@tracing'
     sp runners-bind Bind '#runners' '#runner-services'
