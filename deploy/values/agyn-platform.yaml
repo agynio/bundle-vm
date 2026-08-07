@@ -248,8 +248,7 @@ tracing-app:
 sandboxes-app:
   replicaCount: 1
   oidcAuthority: https://mockauth.dev/r/301ebb13-15a8-48f4-baac-e3fa25be29fc/oidc
-  # TODO: needs its own mockauth client with a sandboxes.<domain> redirect URI.
-  oidcClientId: client_4XUh4_1VfUzpfYkN
+  oidcClientId: client_s3P9y8f8lAAS2cQR
   oidcResource: ""
 
 media-proxy:
