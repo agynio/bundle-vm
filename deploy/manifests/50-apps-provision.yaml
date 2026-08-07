@@ -221,6 +221,34 @@ spec:
               fi
               echo "[apps-provision] model: $MODEL_ID"
 
+              # --- Image catalog. An environment names its images by catalog id,
+              # and the Image Proxy is the only path a workload's images are
+              # pulled by, so an empty catalog leaves nothing to select: a
+              # sandbox comes up with no agent CLI and an agent has no runtime.
+              seed_image() {
+                name="$1"; type="$2"; repository="$3"
+                existing="$(gw agynio.api.gateway.v1.ImagesGateway/ListImages \
+                  "{\"organizationId\":\"$ORG_ID\",\"pageSize\":200,\"pageToken\":\"\"}" \
+                  | jq -r --arg n "$name" '(.images // [])[] | select(.name == $n) | (.meta.id // .id) // empty' | head -1)"
+                if [ -n "$existing" ]; then
+                  echo "[apps-provision] image $name: $existing (existing)"
+                  return 0
+                fi
+                created="$(gw agynio.api.gateway.v1.ImagesGateway/CreateImage \
+                  "{\"organizationId\":\"$ORG_ID\",\"name\":\"$name\",\"type\":\"$type\",\"repository\":\"$repository\",\"visibility\":\"IMAGE_VISIBILITY_INTERNAL\"}" \
+                  | jq -r '.image.meta.id // .image.id // empty')"
+                if [ -z "$created" ]; then
+                  echo "[apps-provision] CreateImage $name failed" >&2
+                  exit 1
+                fi
+                echo "[apps-provision] image $name: $created"
+              }
+
+              seed_image codex IMAGE_TYPE_AGENT_RUNTIME ghcr.io/agynio/agyn-runtime-codex
+              seed_image claude IMAGE_TYPE_AGENT_RUNTIME ghcr.io/agynio/agyn-runtime-claude
+              seed_image agn IMAGE_TYPE_AGENT_RUNTIME ghcr.io/agynio/agyn-runtime-agn
+              seed_image workspace IMAGE_TYPE_WORKSPACE ghcr.io/agynio/devcontainer-agyn
+
               echo "[apps-provision] storing agyn-local-provision configmap"
               cm="$(jq -n --arg org "$ORG_ID" --arg model "$MODEL_ID" \
                 '{apiVersion:"v1",kind:"ConfigMap",metadata:{name:"agyn-local-provision",namespace:"platform"},data:{organizationId:$org,modelId:$model}}')"
