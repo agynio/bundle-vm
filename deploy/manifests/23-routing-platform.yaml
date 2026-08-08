@@ -236,3 +236,27 @@ spec:
             host: sandboxes-app.platform.svc.cluster.local
             port:
               number: 3000
+---
+# The image proxy's registry API. Workload image references are rewritten to
+# this hostname (image-proxy's IMAGE_PROXY_HOST) and the node's container
+# runtime pulls from it through the ingress, so an image registered after the
+# bake has no other way in.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: registry
+  namespace: istio-gateway
+spec:
+  hosts:
+    - "registry.{{BASE_DOMAIN}}"
+  gateways:
+    - platform-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: image-proxy.platform.svc.cluster.local
+            port:
+              number: 5000

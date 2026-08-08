@@ -29,6 +29,7 @@ spec:
         - "minio.{{BASE_DOMAIN}}"
         - "minio-api.{{BASE_DOMAIN}}"
         - "openfga.{{BASE_DOMAIN}}"
+        - "registry.{{BASE_DOMAIN}}"
         - "openfga-playground.{{BASE_DOMAIN}}"
         - "sandboxes.{{BASE_DOMAIN}}"
         - "terminal.{{BASE_DOMAIN}}"
