@@ -98,10 +98,15 @@ upgrade() {
 
 	before="$(installed_version "${release}")"
 
+	# --reuse-values would carry the old values forward but ignore defaults the
+	# newer chart introduces, so a subchart added since the last release starts
+	# on its own empty defaults: keycloak arrived this way and looked for its
+	# database on localhost. Resetting first takes the new chart's defaults and
+	# then reapplies what the release actually set.
 	set -- upgrade "${release}" "${chart}" -n "${NAMESPACE}" \
-		--reuse-values --wait --timeout "${HELM_TIMEOUT}"
-	# Overlaid on top of --reuse-values, so the caller's file changes only what
-	# it names and everything the bake configured survives.
+		--reset-then-reuse-values --wait --timeout "${HELM_TIMEOUT}"
+	# Overlaid on top of the reused values, so the caller's file changes only
+	# what it names and everything the bake configured survives.
 	if [ -n "${extra_values}" ]; then
 		set -- "$@" -f "${extra_values}"
 	fi
