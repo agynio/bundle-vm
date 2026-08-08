@@ -95,6 +95,8 @@ keycloak:
     ingressHostPort:
       enabled: true
       port: {{INGRESS_HOST_PORT}}
+    gatewayHost:
+      enabled: true
   appOrigins:
     console: https://console.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
     chat: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
