@@ -200,6 +200,15 @@ agents-orchestrator:
       value: "tracing.ziti:443"
     - name: AGENT_LLM_BASE_URL
       value: "http://llm-proxy.ziti/v1"
+    # The sidecar rewrites the workload's resolv.conf to this single upstream,
+    # and Ziti prepends its own resolver ahead of it. Left empty the workload
+    # can only resolve intercepted names and everything else is REFUSED --
+    # which a glibc client survives by falling through to the next nameserver
+    # but a c-ares one (Node) does not.
+    - name: WORKLOAD_DNS_UPSTREAM
+      value: "10.43.0.10"
+    - name: ZITI_ENROLLMENT_DNS_UPSTREAM
+      value: "10.43.0.10"
     - name: ZITI_ENROLLMENT_CONTROLLER_RESOLVE_HOST
       value: "ziti-controller-client.ziti.svc.cluster.local"
     - name: ZITI_ENROLLMENT_CONTROLLER_PORT
