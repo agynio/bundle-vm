@@ -227,31 +227,10 @@ data:
       ziti edge create service llm-intercept-codex \
         --configs llm-intercept-codex-intercept-v1 --role-attributes llm-intercept-services
 
-    # Service policies (bootstrap stacks/ziti parity).
-    sp() { # name type identity-roles service-roles
-      exists service-policies "$1" || \
-        ziti edge create service-policy "$1" "$2" --identity-roles "$3" --service-roles "$4"
-    }
-    sp agents-dial-gateway Dial '#agents' '@gateway'
-    sp orchestrators-dial-runners Dial '#orchestrators' '#runner-services'
-    sp terminal-proxy-dial-runners Dial '#terminal-proxy-hosts' '#runner-services'
-    sp gateway-bind Bind '#gateway-hosts' '@gateway'
-    sp llm-proxy-bind Bind '#llm-proxy-hosts' '@llm-proxy'
-    sp egress-gateway-bind Bind '#egress-gateway-hosts' '#egress-services'
-    sp agents-dial-llm-proxy Dial '#agents' '@llm-proxy'
-    sp llm-proxy-bind-intercept Bind '#llm-proxy-hosts' '#llm-intercept-services'
-    # A workload in platform mode carries neither attribute, so its vendor
-    # traffic is not intercepted at all -- it leaves the pod as any unmatched
-    # destination does.
-    sp native-claude-dial Dial '#llm-native-claude' '@llm-intercept-claude'
-    sp native-codex-dial Dial '#llm-native-codex' '@llm-intercept-codex'
-    sp tracing-bind Bind '#tracing-hosts' '@tracing'
-    sp agents-dial-tracing Dial '#agents' '@tracing'
-    sp runners-bind Bind '#runners' '#runner-services'
-    sp apps-dial-gateway Dial '#apps' '@gateway'
-    sp apps-bind Bind '#apps' '#app-services'
-    sp gateway-dial-apps Dial '#gateway-hosts' '#app-services'
-    sp runners-service-dial-runners Dial '#runners-service-hosts' '#runner-services'
+    # Service policies are declared by the platform release and reconciled by
+    # the provisioning controller, so they are deliberately not created here.
+    # The services above are: they carry intercept configs, which are overlay
+    # fabric rather than platform resources.
 
     exists edge-router-policies all-identities-all-routers || \
       ziti edge create edge-router-policy all-identities-all-routers \

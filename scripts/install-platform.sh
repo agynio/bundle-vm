@@ -36,8 +36,7 @@ ZITI_ROUTER_VERSION=3.0.0-pre5
 POSTGRES_HELM_VERSION=0.1.1
 OPENFGA_VERSION=0.2.56
 MINIO_VERSION=5.4.0
-AGYN_PLATFORM_VERSION=0.14.0
-AGYN_APPS_VERSION=0.1.4
+AGYN_PLATFORM_VERSION=0.17.0
 
 log() { printf '[install-platform] %s\n' "$*"; }
 
@@ -183,10 +182,8 @@ helm upgrade --install agyn-platform oci://ghcr.io/agynio/charts/agyn-platform \
 	--version "${AGYN_PLATFORM_VERSION}" -n platform \
 	-f "$(values agyn-platform)"
 
-# 7) Apps layer, part one: the apps-provision Job (admin tuple + k8s-runner and
-#    first-party app registrations + their service-token secrets), and the
-#    authorization model every one of those workloads checks against.
-# These steps wait on things the whole platform has to be up for, and a bare
+# 7) The authorization model every workload checks against.
+# This step waits on things the whole platform has to be up for, and a bare
 # timeout says nothing about which workload never came up — the build's VM is
 # gone by the time anyone reads the log — so dump the cluster's own account of
 # it before failing.
@@ -213,15 +210,7 @@ diagnose() { # what
 	kubectl -n platform get events --sort-by=.lastTimestamp | tail -40 || true
 }
 
-log "waiting for apps-provision job"
-kubectl -n platform wait --for=condition=complete job/apps-provision --timeout=20m || {
-	kubectl -n platform describe job/apps-provision || true
-	kubectl -n platform logs job/apps-provision --tail=100 || true
-	diagnose apps-provision
-	exit 1
-}
-
-# Verify the authorization model *before* installing the apps, not after.
+# Verify the authorization model.
 #
 # The authorization-openfga Secret names an OpenFGA store and model; every
 # authz check resolves against them. An image whose Secret names a model OpenFGA
@@ -230,10 +219,6 @@ kubectl -n platform wait --for=condition=complete job/apps-provision --timeout=2
 # "authorization_model_not_found" the first time anything checks a permission —
 # which then crashloops the k8s-runner, because runner enrollment is an authz
 # call. This has shipped once already.
-#
-# That crashloop is what the agyn-apps install below waits on, so a check placed
-# after it never gets to run: the install times out first and reports only
-# "context deadline exceeded".
 #
 # The migration is idempotent and reuses an identical model, so re-running it is
 # a no-op when the Secret is right and repairs it when it drifted.
@@ -260,14 +245,10 @@ else
 	kubectl -n platform rollout status deploy/authorization --timeout=5m
 fi
 
-# 8) The apps themselves, once everything they depend on is verified.
-log "agyn-apps ${AGYN_APPS_VERSION}"
-helm upgrade --install agyn-apps oci://ghcr.io/agynio/charts/agyn-apps \
-	--version "${AGYN_APPS_VERSION}" -n platform \
-	--wait --timeout "${HELM_TIMEOUT}" -f "$(values agyn-apps)" || {
-	diagnose agyn-apps
-	exit 1
-}
+# The runner and the apps ship inside the umbrella and are declared by it, so
+# there is no second release and nothing to register by hand between them. Both
+# mount a service token the provisioning controller writes, and may start before
+# it exists and retry until it does -- which needs no action here.
 
 log "helm releases:"
 helm list -A

@@ -15,8 +15,8 @@ postgres:
   enabled: true
   persistence:
     size: 20Gi
-  # The apps layer's own databases. Declared here because the umbrella creates
-  # every database on this VM, and the apps chart has no postgres of its own.
+  # The workload layer's own databases, created by the same release that adds
+  # the workloads.
   databases:
     reminders: reminders
     telegram-connector: telegram_connector
