@@ -110,9 +110,16 @@ k8s-runner:
     limits:
       cpu: 500m
       memory: 256Mi
+  # Setting env here replaces the subchart's default list, which includes
+  # CATALOG_PATH — so it must be re-declared or the runner starts with no
+  # catalog. It fails quietly: LoadCatalog treats an unset path as "no catalog"
+  # rather than an error, the runner reports zero flavors, and creating an
+  # environment ends in "This runner reports no flavors".
   env:
     - name: GRPC_ADDR
       value: 0.0.0.0:50051
+    - name: CATALOG_PATH
+      value: /etc/agyn/runner-catalog/catalog.yaml
     - name: KUBE_NAMESPACE
       value: agyn-workloads
     - name: PVC_STORAGE_SIZE
