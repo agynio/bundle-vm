@@ -175,6 +175,18 @@ if helm status metering -n platform >/dev/null 2>&1; then
 	helm uninstall metering -n platform --wait
 fi
 
+# The runner and the apps used to be their own release. An image built then
+# still has it, and Helm refuses to adopt resources another release owns -- the
+# collision is real and immediate: agyn-apps owns the k8s-runner workload and
+# its agent-workload-egress NetworkPolicy, both of which the umbrella now
+# renders. Removed here for the same reason metering was, and nothing is lost:
+# the runner and the apps are re-registered from the declarations, and their
+# service tokens live in Secrets the controller wrote, not in the release.
+if helm status agyn-apps -n platform >/dev/null 2>&1; then
+	log "removing the standalone agyn-apps release; the umbrella owns it now"
+	helm uninstall agyn-apps -n platform --wait
+fi
+
 # 6) The platform umbrella. No --wait: migrations and self-enrollment retry on
 #    their own schedules; prepull-and-wait.sh watches overall convergence.
 log "agyn-platform ${AGYN_PLATFORM_VERSION}"

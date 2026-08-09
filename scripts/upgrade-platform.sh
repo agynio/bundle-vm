@@ -120,6 +120,16 @@ upgrade() {
 	fi
 }
 
+# The runner and the apps used to be their own release, and Helm refuses to
+# adopt resources another release owns. A VM built before the fold still has
+# agyn-apps, so it goes first -- otherwise the upgrade fails on the k8s-runner
+# workload and its NetworkPolicy. Nothing is lost: both are re-registered from
+# the declarations, and their service tokens live in Secrets, not the release.
+if helm status agyn-apps -n "${NAMESPACE}" >/dev/null 2>&1; then
+	log "removing the standalone agyn-apps release; the umbrella owns it now"
+	helm uninstall agyn-apps -n "${NAMESPACE}" --wait
+fi
+
 # One release. The runner and the apps ship inside the umbrella, so there is no
 # second chart to keep in step with it.
 upgrade agyn-platform "${PLATFORM_CHART}" "${platform_version}"
