@@ -246,7 +246,7 @@ else
 	# recreated from its own spec under its own name — the selector and pod
 	# labels are Job-controller state, not something to carry across.
 	kubectl -n agyn-platform get job authorization-migrate -o json |
-		python3 -c 'import json,sys; j=json.load(sys.stdin); j["metadata"]={"name":"authorization-migrate","namespace":"platform"}; j["spec"].pop("selector",None); j["spec"]["template"]["metadata"].pop("labels",None); j.pop("status",None); print(json.dumps(j))' \
+		python3 -c 'import json,sys; j=json.load(sys.stdin); j["metadata"]={"name":"authorization-migrate","namespace":"agyn-platform"}; j["spec"].pop("selector",None); j["spec"]["template"]["metadata"].pop("labels",None); j.pop("status",None); print(json.dumps(j))' \
 			>/tmp/authorization-migrate.json
 	kubectl -n agyn-platform delete job authorization-migrate --wait
 	kubectl apply -f /tmp/authorization-migrate.json

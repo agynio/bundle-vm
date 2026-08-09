@@ -215,7 +215,7 @@ agents-orchestrator:
     - name: IDLE_TIMEOUT
       value: "30s"
     - name: EGRESS_CA_NAMESPACE
-      value: "platform"
+      value: "agyn-platform"
     - name: GROUP_SYNC_ENABLED
       value: "true"
     - name: GROUPS_ADDRESS
