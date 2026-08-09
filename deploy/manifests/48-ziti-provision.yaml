@@ -161,7 +161,7 @@ data:
       fi
     }
 
-    ensure_identity ziti-management platform ziti-management-enrollment --admin
+    ensure_identity ziti-management agyn-platform ziti-management-enrollment --admin
     ensure_identity gateway ziti ziti-gateway-enrollment --role-attributes gateway-hosts
     ensure_identity orchestrator ziti ziti-orchestrator-enrollment --role-attributes orchestrators
     ensure_identity egress-gateway ziti ziti-egress-gateway-enrollment --role-attributes egress-gateway-hosts
@@ -184,11 +184,11 @@ data:
       rm -f "/tmp/$name.jwt" "/tmp/$name.json"
     }
 
-    ensure_enrolled_identity egress-gateway-host platform egress-gateway-ziti-identity \
+    ensure_enrolled_identity egress-gateway-host agyn-platform egress-gateway-ziti-identity \
       --role-attributes egress-gateway-hosts
-    ensure_enrolled_identity app-reminders platform reminders-ziti-identity \
+    ensure_enrolled_identity app-reminders agyn-platform reminders-ziti-identity \
       --role-attributes app-hosts
-    ensure_enrolled_identity app-telegram platform telegram-connector-ziti-identity \
+    ensure_enrolled_identity app-telegram agyn-platform telegram-connector-ziti-identity \
       --role-attributes app-hosts
 
     # Intercept configs + services.
