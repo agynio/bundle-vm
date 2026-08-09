@@ -151,8 +151,9 @@ agents-orchestrator:
   # agynd-cli-init drift to 0.14.41 behind the 0.16.0 the chart ships and
   # dropped SANDBOX_INIT_IMAGE and seven others from the deployment entirely.
   #
-  # extraEnvVars is additive, and none of these three is in the chart's own env,
-  # so nothing is duplicated and nothing is reordered on upgrade.
+  # extraEnvVars overrides a name the chart already sets, from service-base 0.1.6
+  # on -- before that it appended a second entry, which Kubernetes honoured and
+  # helm upgrade then refused to order.
   extraEnvVars:
     # k3s serves cluster DNS here. The sidecar rewrites the workload's
     # resolv.conf to this single upstream, and left empty the workload resolves
