@@ -15,8 +15,8 @@ postgres:
   enabled: true
   persistence:
     size: 20Gi
-  # The apps layer's own databases. Declared here because the umbrella creates
-  # every database on this VM, and the apps chart has no postgres of its own.
+  # The workload layer's own databases, created by the same release that adds
+  # the workloads.
   databases:
     reminders: reminders
     telegram-connector: telegram_connector
@@ -229,7 +229,7 @@ agents-orchestrator:
     # env block wholesale, so they have to be repeated here or they render to
     # nothing and every workload falls back to a single init container.
     - name: AGYND_CLI_INIT_IMAGE
-      value: "ghcr.io/agynio/agynd-cli-init:0.14.37"
+      value: "ghcr.io/agynio/agynd-cli-init:0.14.39"
     - name: AGYN_CLI_INIT_IMAGE
       value: "ghcr.io/agynio/agyn-cli-init:0.3.0"
     - name: IMAGES_ADDRESS
