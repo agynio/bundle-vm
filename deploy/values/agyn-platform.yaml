@@ -34,14 +34,8 @@ s3:
   useSSL: false
   forcePathStyle: true
 
-# The chart deploys these, rather than the install script standing up copies
-# beside it: a dependency the release ships is a dependency the release owns.
-openfga:
-  enabled: true
-openfga-db:
-  enabled: true
-minio:
-  enabled: true
+# openfga, minio and nats are on by default in the chart now, and openfga-db was
+# never one of its dependencies -- the block enabled nothing.
 
 # OIDC: the umbrella's bundled Keycloak, reached on the same host:port the
 # browser uses. coredns-custom points auth.{{BASE_DOMAIN}} at the ingress and
@@ -151,89 +145,32 @@ agents-orchestrator:
   # only competes for the same CPU and memory. Production installs keep the
   # chart default, where leader election and spare capacity are real.
   replicaCount: 1
-  env:
-    - name: THREADS_ADDRESS
-      value: "threads:50051"
-    - name: NOTIFICATIONS_ADDRESS
-      value: "notifications:50051"
-    - name: AGENTS_ADDRESS
-      value: "agents:50051"
-    - name: SECRETS_ADDRESS
-      value: "secrets:50051"
-    - name: RUNNERS_ADDRESS
-      value: "runners:50051"
-    - name: METERING_SERVICE_ADDRESS
-      value: "metering:50051"
-    - name: METERING_SAMPLE_INTERVAL
-      value: "60s"
-    - name: ZITI_ENABLED
-      value: "true"
-    # The tunnel sidecar every agent workload gets. Unset, the orchestrator
-    # falls back to openziti/ziti-tunnel:1.6.15 in code, which is two majors
-    # behind the controller (3.2.0-pre6) and router (3.0.0-pre5) this image
-    # installs. Bootstrap pins the same tag; prepull-and-wait.sh bakes it into
-    # the containerd store, since no agent workload runs during the build.
-    - name: ZITI_SIDECAR_IMAGE
-      value: "openziti/ziti-tunnel:2.0.0-pre8"
-    - name: ZITI_LEASE_RENEWAL_INTERVAL
-      value: "2m"
-    - name: ZITI_ENROLLMENT_TIMEOUT
-      value: "2m"
-    - name: ZITI_MANAGEMENT_ADDRESS
-      value: "ziti-management:50051"
-    - name: AGENT_GATEWAY_ADDRESS
-      value: "gateway.ziti:443"
-    - name: AGENT_TRACING_ADDRESS
-      value: "tracing.ziti:443"
-    - name: AGENT_LLM_BASE_URL
-      value: "http://llm-proxy.ziti/v1"
-    # The sidecar rewrites the workload's resolv.conf to this single upstream,
-    # and Ziti prepends its own resolver ahead of it. Left empty the workload
-    # can only resolve intercepted names and everything else is REFUSED --
-    # which a glibc client survives by falling through to the next nameserver
-    # but a c-ares one (Node) does not.
+  # Only what this VM alone knows. Everything else -- the overlay switch, the
+  # service addresses, the ziti controller host and port, the workload init
+  # images -- is a chart default now, and restating them here is what let
+  # agynd-cli-init drift to 0.14.41 behind the 0.16.0 the chart ships and
+  # dropped SANDBOX_INIT_IMAGE and seven others from the deployment entirely.
+  #
+  # extraEnvVars is additive, and none of these three is in the chart's own env,
+  # so nothing is duplicated and nothing is reordered on upgrade.
+  extraEnvVars:
+    # k3s serves cluster DNS here. The sidecar rewrites the workload's
+    # resolv.conf to this single upstream, and left empty the workload resolves
+    # only intercepted names -- which glibc survives by falling through and a
+    # c-ares client (Node) does not.
     - name: WORKLOAD_DNS_UPSTREAM
       value: "10.43.0.10"
     - name: ZITI_ENROLLMENT_DNS_UPSTREAM
       value: "10.43.0.10"
-    - name: ZITI_ENROLLMENT_CONTROLLER_RESOLVE_HOST
-      value: "ziti-controller-client.ziti.svc.cluster.local"
-    - name: ZITI_ENROLLMENT_CONTROLLER_PORT
-      value: "{{INGRESS_PORT}}"
-    - name: ZITI_RUNTIME_CONTROLLER_RESOLVE_HOST
-      value: "ziti-controller-client.ziti.svc.cluster.local"
-    - name: ZITI_RUNTIME_CONTROLLER_PORT
-      value: "{{INGRESS_PORT}}"
-    - name: POLL_INTERVAL
-      value: "5s"
-    - name: IDLE_TIMEOUT
-      value: "30s"
-    - name: EGRESS_CA_NAMESPACE
-      value: "agyn-platform"
-    - name: GROUP_SYNC_ENABLED
-      value: "true"
-    - name: GROUPS_ADDRESS
-      value: "groups:50051"
-    - name: NATS_URL
-      value: "nats://nats:4222"
-    # The catalog path. IMAGE_PROXY_HOST carries no port: install-ingress.sh
-    # mirrors this hostname to the ingress NodePort, so a reference baked here
-    # is the same reference production pulls on 443.
-    # The umbrella pins the two platform init images; the overlay replaces this
-    # env block wholesale, so they have to be repeated here or they render to
-    # nothing and every workload falls back to a single init container.
-    - name: AGYND_CLI_INIT_IMAGE
-      value: "ghcr.io/agynio/agynd-cli-init:0.16.0"
-    - name: AGYN_CLI_INIT_IMAGE
-      value: "ghcr.io/agynio/agyn-cli-init:0.3.0"
-    - name: IMAGES_ADDRESS
-      value: "images:50051"
-    - name: ORGANIZATIONS_ADDRESS
-      value: "organizations:50051"
-    - name: IMAGE_PROXY_ADDRESS
-      value: "image-proxy:50051"
+    - name: AGENT_LLM_BASE_URL
+      value: "http://llm-proxy.ziti/v1"
+    # The chart derives this from global.ingress.baseDomain, which cannot be set
+    # until the service charts are released against service-base 0.1.5 -- 19 of
+    # them still embed 0.1.4, whose schema rejects an unknown global. Empty
+    # disables every catalog image reference rather than falling back, so it is
+    # named here until then.
     - name: IMAGE_PROXY_HOST
-      value: "registry.agyn.dev"
+      value: "registry.{{BASE_DOMAIN}}"
 
 # Shell access to sandboxes. The CLI connects from the host, so the WebSocket
 # URL it is handed carries the forwarded host port, not the in-cluster one
@@ -323,10 +260,6 @@ media-proxy:
       configMap:
         name: agyn-local-ca
 
-# Event bus.
-nats:
-  enabled: true
-
 # bitnami redis: pin by digest (the chart defaults to tag "latest"; bitnami no
 # longer publishes versioned free tags) and disable auth (NOAUTH errors
 # otherwise). NOTE: these two used to live in separate blocks and the second
@@ -342,10 +275,6 @@ notifications-redis:
 
 authorization:
   replicaCount: 1
-  # authorization's migration Job provisions the OpenFGA store/model and
-  # writes their IDs into the authorization-openfga secret.
-  # The bundled instance, in this release's namespace.
-  openfgaApiUrl: http://openfga:8080
 
 files:
   replicaCount: 1
@@ -370,53 +299,23 @@ ziti-management:
   replicaCount: 1
   zitiControllerUrl: https://ziti-mgmt.{{BASE_DOMAIN}}:{{INGRESS_PORT}}/edge/management/v1
 
-egress:
-  enabled: true
-  image:
-    tag: 0.1.3
-
-# --- Remaining service toggles -------------------------------------
-# On. It mounts an *enrolled* OpenZiti identity rather than enrolling itself, so
-# the ziti-provision Job enrols one for it (egress-gateway-ziti-identity) — a
-# pod cannot consume its own one-time token.
-egress-gateway:
-  enabled: true
 # groups is a core dependency: users/apps/agents do group-sync against it, and
 # without it create-user/agent block ~30s on a downstream timeout. Needs its
 # database (shared Postgres + db-urls secret) and an arm64 image (upstream only
 # publishes amd64 — see the multi-arch note in the README).
 groups:
   replicaCount: 1
-  enabled: true
-  # The subchart's appVersion resolves to 0.1.0, which was published amd64-only
-  # and leaves every arm64 pod in ImagePullBackOff. 0.1.1 is the first tag built
-  # for both architectures (agynio/groups#8); drop this once the subchart's
-  # appVersion catches up.
-  image:
-    tag: 0.1.1
 # The Gateway serves the Networks API unconditionally, so leaving this off
 # does not hide the feature — it makes every ListNetworks call fail with
 # "produced zero addresses" once the console asks for it. ListServicesByTag,
 # the API this needs, ships in the pinned ziti-management.
 networks:
   replicaCount: 1
-  enabled: true
-  # Pinned because the umbrella's vendored networks chart still carries
-  # appVersion 0.1.0, and that image is a single amd64 manifest — on this arm64
-  # VM the pod dies with `exec format error`. 0.1.1 is the first multi-arch
-  # build. Drop this once the umbrella bumps the chart it vendors.
-  image:
-    tag: "0.1.2"
 # On, like every other platform service the Gateway routes to. Its database is
 # already provisioned in the shared Postgres and named in the db-urls secret.
 expose:
   replicaCount: 1
   enabled: true
-ncps:
-  enabled: false
-registryMirror:
-  enabled: false
-
 agents:
   replicaCount: 1
 
