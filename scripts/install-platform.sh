@@ -36,7 +36,7 @@ ZITI_ROUTER_VERSION=3.0.0-pre5
 POSTGRES_HELM_VERSION=0.1.1
 OPENFGA_VERSION=0.2.56
 MINIO_VERSION=5.4.0
-AGYN_PLATFORM_VERSION=0.18.0
+AGYN_PLATFORM_VERSION=0.19.0
 
 log() { printf '[install-platform] %s\n' "$*"; }
 
@@ -220,6 +220,14 @@ diagnose() { # what
 		kubectl -n agyn-platform logs "${pod}" --tail=60 --all-containers --previous 2>/dev/null || true
 	done
 	kubectl -n agyn-platform get events --sort-by=.lastTimestamp | tail -40 || true
+
+	# What the release declared and how far provisioning got with it. Without
+	# this the failure reads as two workloads stuck on a missing Secret, which
+	# says nothing about the declaration that never produced it.
+	echo "[install-platform] --- declarations"
+	kubectl -n agyn-platform get organizations,clusteradmins,images,runners,apps,overlaypolicies 2>/dev/null || true
+	kubectl -n agyn-platform describe organizations,runners,apps 2>/dev/null | grep -E "^Name:|Reason:|Message:|Status:" | head -40 || true
+	kubectl -n agyn-platform logs deployment/platform-controller --tail=60 2>/dev/null || true
 }
 
 # Verify the authorization model.
