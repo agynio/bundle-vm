@@ -192,45 +192,10 @@ data:
       --role-attributes app-hosts
 
     # Intercept configs + services.
-    exists configs gateway-intercept-v1 || \
-      ziti edge create config gateway-intercept-v1 intercept.v1 \
-        '{"addresses":["gateway.ziti"],"protocols":["tcp"],"portRanges":[{"low":443,"high":443}]}'
-    exists configs llm-proxy-intercept-v1 || \
-      ziti edge create config llm-proxy-intercept-v1 intercept.v1 \
-        '{"addresses":["llm-proxy.ziti"],"protocols":["tcp"],"portRanges":[{"low":80,"high":80}]}'
-    exists configs tracing-intercept-v1 || \
-      ziti edge create config tracing-intercept-v1 intercept.v1 \
-        '{"addresses":["tracing.ziti"],"protocols":["tcp"],"portRanges":[{"low":443,"high":443}]}'
-    exists services gateway || \
-      ziti edge create service gateway --configs gateway-intercept-v1 --role-attributes gateway
-    exists services llm-proxy || \
-      ziti edge create service llm-proxy --configs llm-proxy-intercept-v1 --role-attributes llm-proxy
-    exists services tracing || \
-      ziti edge create service tracing --configs tracing-intercept-v1 --role-attributes tracing
-
-    # Vendor intercept services, one per vendor. Static, not per-rule: the
-    # vendor set is closed, so nothing is provisioned per organization,
-    # environment, or attachment. What varies per workload is only which of
-    # these it may dial, expressed by the llm-native-<vendor> role attribute
-    # the orchestrator stamps on the workload identity. No host.v1 -- the
-    # proxy binds these through the SDK exactly as it binds llm-proxy.
-    exists configs llm-intercept-claude-intercept-v1 || \
-      ziti edge create config llm-intercept-claude-intercept-v1 intercept.v1 \
-        '{"addresses":["api.anthropic.com"],"protocols":["tcp"],"portRanges":[{"low":443,"high":443}]}'
-    exists configs llm-intercept-codex-intercept-v1 || \
-      ziti edge create config llm-intercept-codex-intercept-v1 intercept.v1 \
-        '{"addresses":["chatgpt.com"],"protocols":["tcp"],"portRanges":[{"low":443,"high":443}]}'
-    exists services llm-intercept-claude || \
-      ziti edge create service llm-intercept-claude \
-        --configs llm-intercept-claude-intercept-v1 --role-attributes llm-intercept-services
-    exists services llm-intercept-codex || \
-      ziti edge create service llm-intercept-codex \
-        --configs llm-intercept-codex-intercept-v1 --role-attributes llm-intercept-services
-
-    # Service policies are declared by the platform release and reconciled by
-    # the provisioning controller, so they are deliberately not created here.
-    # The services above are: they carry intercept configs, which are overlay
-    # fabric rather than platform resources.
+    # Services and their intercept configs are declared by the platform release
+    # and reconciled by the provisioning controller, so they are deliberately
+    # not created here. What stays is the fabric the platform is installed onto:
+    # the router, and the admin identity the enrolment service itself uses.
 
     exists edge-router-policies all-identities-all-routers || \
       ziti edge create edge-router-policy all-identities-all-routers \
