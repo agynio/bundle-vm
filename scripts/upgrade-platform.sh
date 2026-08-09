@@ -29,7 +29,7 @@ set -euo pipefail
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-NAMESPACE="${AGYN_PLATFORM_NAMESPACE:-platform}"
+NAMESPACE="${AGYN_PLATFORM_NAMESPACE:-agyn-platform}"
 PLATFORM_CHART="${AGYN_PLATFORM_CHART:-oci://ghcr.io/agynio/charts/agyn-platform}"
 HELM_TIMEOUT="${AGYN_HELM_TIMEOUT:-15m}"
 

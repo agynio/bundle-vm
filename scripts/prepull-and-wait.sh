@@ -91,7 +91,7 @@ done
 # Images a user registers later are not baked and go through the proxy for real,
 # which is what exercises that path.
 REGISTRY_HOST="${REGISTRY_HOST:-registry.agyn.dev}"
-PLATFORM_NAMESPACE="${AGYN_PLATFORM_NAMESPACE:-platform}"
+PLATFORM_NAMESPACE="${AGYN_PLATFORM_NAMESPACE:-agyn-platform}"
 POSTGRES_POD="$(kubectl get pods -n "${PLATFORM_NAMESPACE}" -l app=platform-postgres -o name 2>/dev/null | head -1)"
 
 query() {

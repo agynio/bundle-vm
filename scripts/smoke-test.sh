@@ -17,7 +17,7 @@ set -euo pipefail
 
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 
-NAMESPACE="${AGYN_PLATFORM_NAMESPACE:-platform}"
+NAMESPACE="${AGYN_PLATFORM_NAMESPACE:-agyn-platform}"
 
 log() { printf '[smoke-test] %s\n' "$*"; }
 

@@ -39,7 +39,7 @@ set -euo pipefail
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
 PORT="${1:-${AGYN_INGRESS_HOST_PORT:-}}"
-NAMESPACE="${AGYN_PLATFORM_NAMESPACE:-platform}"
+NAMESPACE="${AGYN_PLATFORM_NAMESPACE:-agyn-platform}"
 BASE_DOMAIN="${AGYN_BASE_DOMAIN:-agyn.dev}"
 REALM="${AGYN_KEYCLOAK_REALM:-agyn}"
 
