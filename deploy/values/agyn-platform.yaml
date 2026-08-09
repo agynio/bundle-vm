@@ -24,23 +24,24 @@ postgres:
 validation:
   requireExistingSecrets: false
 
-# Umbrella-level contract values.
+# Umbrella-level contract values. The endpoint is the chart's own bundled MinIO,
+# reached in the release namespace -- not a copy installed beside it.
 s3:
   existingSecret: agyn-files-s3
-  endpoint: minio.minio.svc.cluster.local:9000
+  endpoint: minio:9000
   bucket: agyn-files
   region: us-east-1
   useSSL: false
   forcePathStyle: true
 
-# install-platform.sh installs openfga and minio itself, so the umbrella must
-# not deploy a second copy. It gained them as optional subcharts in 0.6.0 (they
-# are absent from 0.5.x), both defaulting on. metering is deliberately not here
-# — the umbrella owns it now.
+# The chart deploys these, rather than the install script standing up copies
+# beside it: a dependency the release ships is a dependency the release owns.
 openfga:
-  enabled: false
+  enabled: true
+openfga-db:
+  enabled: true
 minio:
-  enabled: false
+  enabled: true
 
 # OIDC: the umbrella's bundled Keycloak, reached on the same host:port the
 # browser uses. coredns-custom points auth.{{BASE_DOMAIN}} at the ingress and
@@ -49,13 +50,6 @@ minio:
 # Gateway fetches discovery server-side and zitadel/oidc refuses a document
 # whose issuer differs from the URL it was fetched from.
 platform:
-  # Connection details for the separately installed instance above. These
-  # belong here, not under openfga.*: that key configures the upstream OpenFGA
-  # chart, whose schema rejects unknown properties and fails the render.
-  openfga:
-    apiUrl: http://openfga.openfga.svc.cluster.local:8080
-    storeId: ""
-    modelId: ""
   oidc:
     issuerUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
     clientId: agyn-chat
@@ -350,7 +344,8 @@ authorization:
   replicaCount: 1
   # authorization's migration Job provisions the OpenFGA store/model and
   # writes their IDs into the authorization-openfga secret.
-  openfgaApiUrl: http://openfga.openfga.svc.cluster.local:8080
+  # The bundled instance, in this release's namespace.
+  openfgaApiUrl: http://openfga:8080
 
 files:
   replicaCount: 1
@@ -359,7 +354,7 @@ files:
     runAsGroup: 65532
   files:
     s3:
-      endpoint: minio.minio.svc.cluster.local:9000
+      endpoint: minio:9000
       bucket: agyn-files
       region: us-east-1
       useSSL: false
