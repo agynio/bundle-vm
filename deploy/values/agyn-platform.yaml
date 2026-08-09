@@ -112,19 +112,12 @@ gateway:
     oidcIssuerUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
     oidcClientId: agyn-chat
     oidcAudience: ""
-    # Build-time bootstrap token, used by the apps-provision Job while the
-    # image is built, and replaced on first boot by one the host generates for
-    # that install (scripts/set-bootstrap-token.sh) — a token baked into the
-    # image is identical on every machine running that version and cannot be
-    # rotated. The identity UUID matches bootstrap's cluster_admin_identity_id
-    # constant; the matching OpenFGA admin tuple is written by apps-provision.
-    #
-    # A literal, not a secretKeyRef: the gateway chart renders CLUSTER_ADMIN_TOKEN
-    # only from this value, so the host rewrites the Deployment env instead.
-    # Leaving it empty is not an option — the gateway refuses to start when
-    # CLUSTER_ADMIN_IDENTITY_ID is set without a token.
-    clusterAdminToken: agyn-local-cluster-admin-token
-    clusterAdminIdentityId: a3c1e9d2-7f4b-5e1a-9c3d-2b8f6a4e7d10
+    # The bootstrap token and the identity it resolves to come from
+    # platform.bootstrapToken in the umbrella: the chart generates one per
+    # install into a Secret and the Gateway reads it by reference. A token baked
+    # into the image would be identical on every machine running that version
+    # and could not be rotated, so scripts/set-bootstrap-token.sh replaces the
+    # Secret's value on first boot with one the host generated.
   # Agents dial the gateway over the OpenZiti overlay (gateway.ziti:443), so the
   # gateway must accept Ziti connections. Without it the overlay dial is reset:
   # "error reading server preface: ... connection reset by peer".

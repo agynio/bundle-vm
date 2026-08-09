@@ -15,6 +15,8 @@ export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
 TOKEN="${1:-${AGYN_BOOTSTRAP_TOKEN:-}}"
 NAMESPACE="${AGYN_PLATFORM_NAMESPACE:-platform}"
+SECRET="${AGYN_BOOTSTRAP_TOKEN_SECRET:-gateway-bootstrap-token}"
+KEY="${AGYN_BOOTSTRAP_TOKEN_KEY:-token}"
 
 log() { printf '[set-bootstrap-token] %s\n' "$*"; }
 
@@ -28,17 +30,26 @@ until kubectl get --raw=/readyz >/dev/null 2>&1; do
 	sleep 5
 done
 
-# The Gateway chart renders CLUSTER_ADMIN_TOKEN from a literal helm value, so
-# the token lives in the Deployment spec and this is where it has to be
-# replaced. `kubectl set env` also rolls the pods, which is required either
-# way: the Gateway reads the token once, at container start.
-current="$(kubectl get deployment gateway -n "${NAMESPACE}" \
-	-o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="CLUSTER_ADMIN_TOKEN")].value}' 2>/dev/null || true)"
+# The chart generates the Secret on install and reuses whatever it finds on
+# upgrade, so writing here is what makes the host's token survive an upgrade
+# without a step that puts it back afterwards.
+until kubectl get secret "${SECRET}" -n "${NAMESPACE}" >/dev/null 2>&1; do
+	log "waiting for secret ${SECRET}"
+	sleep 5
+done
+
+current="$(kubectl get secret "${SECRET}" -n "${NAMESPACE}" \
+	-o jsonpath="{.data.${KEY}}" 2>/dev/null | base64 -d 2>/dev/null || true)"
 if [ "${current}" = "${TOKEN}" ]; then
 	log "token already current"
 	exit 0
 fi
 
-kubectl set env deployment/gateway -n "${NAMESPACE}" "CLUSTER_ADMIN_TOKEN=${TOKEN}" >/dev/null
+kubectl patch secret "${SECRET}" -n "${NAMESPACE}" \
+	--type merge -p "{\"stringData\":{\"${KEY}\":\"${TOKEN}\"}}" >/dev/null
+
+# The Gateway reads CLUSTER_ADMIN_TOKEN once, at container start, so a changed
+# Secret only takes effect on a restart.
+kubectl rollout restart deployment/gateway -n "${NAMESPACE}" >/dev/null
 kubectl rollout status deployment/gateway -n "${NAMESPACE}" --timeout=300s
 log "done"
