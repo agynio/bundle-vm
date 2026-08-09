@@ -170,9 +170,9 @@ helm upgrade --install minio minio/minio \
 # image built then still has that release, and Helm refuses to adopt resources
 # another release owns — so it is removed here before the umbrella renders its
 # own copy. Nothing is lost: the data lives in Postgres, not the release.
-if helm status metering -n platform >/dev/null 2>&1; then
+if helm status metering -n agyn-platform >/dev/null 2>&1; then
 	log "removing the standalone metering release; the umbrella owns it now"
-	helm uninstall metering -n platform --wait
+	helm uninstall metering -n agyn-platform --wait
 fi
 
 # The runner and the apps used to be their own release. An image built then
@@ -182,16 +182,16 @@ fi
 # renders. Removed here for the same reason metering was, and nothing is lost:
 # the runner and the apps are re-registered from the declarations, and their
 # service tokens live in Secrets the controller wrote, not in the release.
-if helm status agyn-apps -n platform >/dev/null 2>&1; then
+if helm status agyn-apps -n agyn-platform >/dev/null 2>&1; then
 	log "removing the standalone agyn-apps release; the umbrella owns it now"
-	helm uninstall agyn-apps -n platform --wait
+	helm uninstall agyn-apps -n agyn-platform --wait
 fi
 
 # 6) The platform umbrella. No --wait: migrations and self-enrollment retry on
 #    their own schedules; prepull-and-wait.sh watches overall convergence.
 log "agyn-platform ${AGYN_PLATFORM_VERSION}"
 helm upgrade --install agyn-platform oci://ghcr.io/agynio/charts/agyn-platform \
-	--version "${AGYN_PLATFORM_VERSION}" -n platform \
+	--version "${AGYN_PLATFORM_VERSION}" -n agyn-platform \
 	-f "$(values agyn-platform)"
 
 # 7) The authorization model every workload checks against.
@@ -201,25 +201,25 @@ helm upgrade --install agyn-platform oci://ghcr.io/agynio/charts/agyn-platform \
 # it before failing.
 diagnose() { # what
 	log "$1 did not converge; cluster state follows"
-	kubectl -n platform get pods -o wide || true
-	kubectl -n platform logs deployment/gateway --tail=100 --all-containers || true
+	kubectl -n agyn-platform get pods -o wide || true
+	kubectl -n agyn-platform logs deployment/gateway --tail=100 --all-containers || true
 	# Whatever is not up is usually the reason, and its own logs say why far
 	# better than the event list does. Guessing from events cost several
 	# 24-minute builds.
-	for pod in $(kubectl -n platform get pods --no-headers |
+	for pod in $(kubectl -n agyn-platform get pods --no-headers |
 		awk '$2 != "READY" && $3 != "Completed" { print $1 }' ); do
-		ready="$(kubectl -n platform get pod "${pod}" -o jsonpath='{.status.containerStatuses[*].ready}')"
+		ready="$(kubectl -n agyn-platform get pod "${pod}" -o jsonpath='{.status.containerStatuses[*].ready}')"
 		case "${ready}" in
 		*false*) ;;
 		*) continue ;;
 		esac
 		log "--- describe ${pod}"
-		kubectl -n platform describe pod "${pod}" | tail -30 || true
+		kubectl -n agyn-platform describe pod "${pod}" | tail -30 || true
 		log "--- logs ${pod}"
-		kubectl -n platform logs "${pod}" --tail=60 --all-containers || true
-		kubectl -n platform logs "${pod}" --tail=60 --all-containers --previous 2>/dev/null || true
+		kubectl -n agyn-platform logs "${pod}" --tail=60 --all-containers || true
+		kubectl -n agyn-platform logs "${pod}" --tail=60 --all-containers --previous 2>/dev/null || true
 	done
-	kubectl -n platform get events --sort-by=.lastTimestamp | tail -40 || true
+	kubectl -n agyn-platform get events --sort-by=.lastTimestamp | tail -40 || true
 }
 
 # Verify the authorization model.
@@ -235,9 +235,9 @@ diagnose() { # what
 # The migration is idempotent and reuses an identical model, so re-running it is
 # a no-op when the Secret is right and repairs it when it drifted.
 log "verifying the authorization model"
-store="$(kubectl -n platform get secret authorization-openfga -o jsonpath='{.data.OPENFGA_STORE_ID}' | base64 -d)"
-model="$(kubectl -n platform get secret authorization-openfga -o jsonpath='{.data.OPENFGA_MODEL_ID}' | base64 -d)"
-if kubectl -n platform exec deploy/authorization -- \
+store="$(kubectl -n agyn-platform get secret authorization-openfga -o jsonpath='{.data.OPENFGA_STORE_ID}' | base64 -d)"
+model="$(kubectl -n agyn-platform get secret authorization-openfga -o jsonpath='{.data.OPENFGA_MODEL_ID}' | base64 -d)"
+if kubectl -n agyn-platform exec deploy/authorization -- \
 	wget -q -O /dev/null "http://openfga.openfga.svc.cluster.local:8080/stores/${store}/authorization-models/${model}"; then
 	log "  model ${model} present"
 else
@@ -245,16 +245,16 @@ else
 	# Same job, run again. A completed Job is immutable, so it is deleted and
 	# recreated from its own spec under its own name — the selector and pod
 	# labels are Job-controller state, not something to carry across.
-	kubectl -n platform get job authorization-migrate -o json |
+	kubectl -n agyn-platform get job authorization-migrate -o json |
 		python3 -c 'import json,sys; j=json.load(sys.stdin); j["metadata"]={"name":"authorization-migrate","namespace":"platform"}; j["spec"].pop("selector",None); j["spec"]["template"]["metadata"].pop("labels",None); j.pop("status",None); print(json.dumps(j))' \
 			>/tmp/authorization-migrate.json
-	kubectl -n platform delete job authorization-migrate --wait
+	kubectl -n agyn-platform delete job authorization-migrate --wait
 	kubectl apply -f /tmp/authorization-migrate.json
 	rm -f /tmp/authorization-migrate.json
-	kubectl -n platform wait --for=condition=complete job/authorization-migrate --timeout=5m
-	kubectl -n platform logs job/authorization-migrate
-	kubectl -n platform rollout restart deploy/authorization
-	kubectl -n platform rollout status deploy/authorization --timeout=5m
+	kubectl -n agyn-platform wait --for=condition=complete job/authorization-migrate --timeout=5m
+	kubectl -n agyn-platform logs job/authorization-migrate
+	kubectl -n agyn-platform rollout restart deploy/authorization
+	kubectl -n agyn-platform rollout status deploy/authorization --timeout=5m
 fi
 
 # The runner and the apps ship inside the umbrella and are declared by it, so

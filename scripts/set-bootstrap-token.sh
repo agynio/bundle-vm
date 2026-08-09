@@ -14,7 +14,7 @@ set -euo pipefail
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
 TOKEN="${1:-${AGYN_BOOTSTRAP_TOKEN:-}}"
-NAMESPACE="${AGYN_PLATFORM_NAMESPACE:-platform}"
+NAMESPACE="${AGYN_PLATFORM_NAMESPACE:-agyn-platform}"
 SECRET="${AGYN_BOOTSTRAP_TOKEN_SECRET:-gateway-bootstrap-token}"
 KEY="${AGYN_BOOTSTRAP_TOKEN_KEY:-token}"
 
