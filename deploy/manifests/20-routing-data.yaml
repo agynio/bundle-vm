@@ -15,7 +15,7 @@ spec:
             prefix: /
       route:
         - destination:
-            host: minio-console.minio.svc.cluster.local
+            host: minio-console.agyn-platform.svc.cluster.local
             port:
               number: 9001
 ---
@@ -35,7 +35,7 @@ spec:
             prefix: /
       route:
         - destination:
-            host: minio.minio.svc.cluster.local
+            host: minio.agyn-platform.svc.cluster.local
             port:
               number: 9000
 ---
@@ -55,7 +55,7 @@ spec:
             prefix: /
       route:
         - destination:
-            host: openfga.openfga.svc.cluster.local
+            host: openfga.agyn-platform.svc.cluster.local
             port:
               number: 8080
 ---
@@ -75,6 +75,6 @@ spec:
             prefix: /
       route:
         - destination:
-            host: openfga.openfga.svc.cluster.local
+            host: openfga.agyn-platform.svc.cluster.local
             port:
               number: 3000

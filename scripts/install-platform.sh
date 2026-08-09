@@ -33,10 +33,7 @@ HELM_TIMEOUT=15m
 TRUST_MANAGER_VERSION=v0.22.0
 ZITI_CONTROLLER_VERSION=3.2.0-pre6
 ZITI_ROUTER_VERSION=3.0.0-pre5
-POSTGRES_HELM_VERSION=0.1.1
-OPENFGA_VERSION=0.2.56
-MINIO_VERSION=5.4.0
-AGYN_PLATFORM_VERSION=0.19.0
+AGYN_PLATFORM_VERSION=0.27.0
 
 log() { printf '[install-platform] %s\n' "$*"; }
 
@@ -63,9 +60,7 @@ done < <(find "${DEPLOY_DIR}/manifests" -maxdepth 1 -name '*.yaml' -print0 | sor
 log "adding helm repositories"
 helm repo add jetstack https://charts.jetstack.io >/dev/null
 helm repo add openziti https://openziti.io/helm-charts >/dev/null
-helm repo add minio https://charts.min.io >/dev/null
-helm repo add openfga https://openfga.github.io/helm-charts >/dev/null
-helm repo update jetstack openziti minio openfga >/dev/null
+helm repo update jetstack openziti >/dev/null
 
 # 3) trust-manager (distributes the ziti controller trust bundle).
 log "trust-manager ${TRUST_MANAGER_VERSION}"
@@ -150,21 +145,10 @@ helm upgrade --install ziti-router openziti/ziti-router \
 	--version "${ZITI_ROUTER_VERSION}" -n ziti \
 	--wait --timeout "${HELM_TIMEOUT}" -f "$(values ziti-router)"
 
-# 5) Data layer.
-log "openfga-db (postgres-helm ${POSTGRES_HELM_VERSION})"
-helm upgrade --install openfga-db oci://ghcr.io/agynio/charts/postgres-helm \
-	--version "${POSTGRES_HELM_VERSION}" -n openfga \
-	--wait --timeout "${HELM_TIMEOUT}" -f "$(values openfga-db)"
-
-log "openfga ${OPENFGA_VERSION}"
-helm upgrade --install openfga openfga/openfga \
-	--version "${OPENFGA_VERSION}" -n openfga \
-	--wait --timeout "${HELM_TIMEOUT}" -f "$(values openfga)"
-
-log "minio ${MINIO_VERSION}"
-helm upgrade --install minio minio/minio \
-	--version "${MINIO_VERSION}" -n minio \
-	--wait --timeout "${HELM_TIMEOUT}" -f "$(values minio)"
+# The data layer is not installed here. OpenFGA, its database and MinIO are
+# subcharts of the umbrella, so the release that needs them deploys them --
+# standing up copies beside it left two owners for one dependency and a
+# connection string in this file to keep in step with both.
 
 # metering used to be its own release, from before the umbrella carried it. An
 # image built then still has that release, and Helm refuses to adopt resources
@@ -190,8 +174,13 @@ fi
 # 6) The platform umbrella. No --wait: migrations and self-enrollment retry on
 #    their own schedules; prepull-and-wait.sh watches overall convergence.
 log "agyn-platform ${AGYN_PLATFORM_VERSION}"
+# --timeout, but still no --wait: the release's own hooks are the only thing
+# waited on, and one of them now migrates against a datastore this release also
+# brings. Five minutes is Helm's default and is shorter than Postgres and
+# OpenFGA starting from cold.
 helm upgrade --install agyn-platform oci://ghcr.io/agynio/charts/agyn-platform \
 	--version "${AGYN_PLATFORM_VERSION}" -n agyn-platform \
+	--timeout "${HELM_TIMEOUT}" \
 	-f "$(values agyn-platform)"
 
 # 7) The authorization model every workload checks against.
@@ -246,7 +235,7 @@ log "verifying the authorization model"
 store="$(kubectl -n agyn-platform get secret authorization-openfga -o jsonpath='{.data.OPENFGA_STORE_ID}' | base64 -d)"
 model="$(kubectl -n agyn-platform get secret authorization-openfga -o jsonpath='{.data.OPENFGA_MODEL_ID}' | base64 -d)"
 if kubectl -n agyn-platform exec deploy/authorization -- \
-	wget -q -O /dev/null "http://openfga.openfga.svc.cluster.local:8080/stores/${store}/authorization-models/${model}"; then
+	wget -q -O /dev/null "http://openfga:8080/stores/${store}/authorization-models/${model}"; then
 	log "  model ${model} present"
 else
 	log "  model ${model} missing from store ${store}; re-running the migration"
