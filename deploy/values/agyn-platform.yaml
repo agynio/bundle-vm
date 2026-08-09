@@ -106,7 +106,7 @@ gateway:
     # into the image would be identical on every machine running that version
     # and could not be rotated, so scripts/set-bootstrap-token.sh replaces the
     # Secret's value on first boot with one the host generated.
-  # Agents dial the gateway over the OpenZiti overlay (gateway.ziti:443), so the
+  # Agents dial the gateway over the OpenZiti overlay (gateway.agyn:443), so the
   # gateway must accept Ziti connections. Without it the overlay dial is reset:
   # "error reading server preface: ... connection reset by peer".
   # extraEnvVars is additive; `env` would replace the chart's templated list.
@@ -164,7 +164,7 @@ agents-orchestrator:
     - name: ZITI_ENROLLMENT_DNS_UPSTREAM
       value: "10.43.0.10"
     - name: AGENT_LLM_BASE_URL
-      value: "http://llm-proxy.ziti/v1"
+      value: "http://llm-proxy.agyn/v1"
     # The chart derives this from global.ingress.baseDomain, which cannot be set
     # until the service charts are released against service-base 0.1.5 -- 19 of
     # them still embed 0.1.4, whose schema rejects an unknown global. Empty
@@ -207,7 +207,7 @@ llm-proxy:
   llmProxy:
     zitiEnabled: true
 
-# Agents send spans to tracing.ziti:443 over the overlay.
+# Agents send spans to tracing.agyn:443 over the overlay.
 tracing:
   replicaCount: 1
   extraEnvVars:
