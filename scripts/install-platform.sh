@@ -33,7 +33,7 @@ HELM_TIMEOUT=15m
 TRUST_MANAGER_VERSION=v0.22.0
 ZITI_CONTROLLER_VERSION=3.2.0-pre6
 ZITI_ROUTER_VERSION=3.0.0-pre5
-AGYN_PLATFORM_VERSION=0.20.0
+AGYN_PLATFORM_VERSION=0.21.0
 
 log() { printf '[install-platform] %s\n' "$*"; }
 
@@ -174,8 +174,13 @@ fi
 # 6) The platform umbrella. No --wait: migrations and self-enrollment retry on
 #    their own schedules; prepull-and-wait.sh watches overall convergence.
 log "agyn-platform ${AGYN_PLATFORM_VERSION}"
+# --timeout, but still no --wait: the release's own hooks are the only thing
+# waited on, and one of them now migrates against a datastore this release also
+# brings. Five minutes is Helm's default and is shorter than Postgres and
+# OpenFGA starting from cold.
 helm upgrade --install agyn-platform oci://ghcr.io/agynio/charts/agyn-platform \
 	--version "${AGYN_PLATFORM_VERSION}" -n agyn-platform \
+	--timeout "${HELM_TIMEOUT}" \
 	-f "$(values agyn-platform)"
 
 # 7) The authorization model every workload checks against.
