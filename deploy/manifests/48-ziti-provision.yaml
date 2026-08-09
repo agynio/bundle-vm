@@ -208,24 +208,46 @@ data:
     exists services tracing || \
       ziti edge create service tracing --configs tracing-intercept-v1 --role-attributes tracing
 
+    # Vendors were renamed after the APIs they open (claude -> anthropic,
+    # codex -> openai). A cluster provisioned under the old names holds
+    # services, policies, and role attributes that no longer match anything:
+    # a workload keeps its llm-native-claude attribute, the policy granting it
+    # is gone, and its vendor traffic silently stops being intercepted. That
+    # reads as a network fault rather than as a rename, so the old objects are
+    # removed here before the new ones are created.
+    #
+    # Role attributes on live identities are the orchestrator's to restamp --
+    # it does so on the next assembly -- but the stale grant must not outlive
+    # the rename, or an unmigrated workload keeps reaching a service it should
+    # no longer match.
+    for old in native-claude-dial native-codex-dial; do
+      exists service-policies "$old" && ziti edge delete service-policy "$old" || true
+    done
+    for old in llm-intercept-claude llm-intercept-codex; do
+      exists services "$old" && ziti edge delete service "$old" || true
+    done
+    for old in llm-intercept-claude-intercept-v1 llm-intercept-codex-intercept-v1; do
+      exists configs "$old" && ziti edge delete config "$old" || true
+    done
+
     # Vendor intercept services, one per vendor. Static, not per-rule: the
     # vendor set is closed, so nothing is provisioned per organization,
     # environment, or attachment. What varies per workload is only which of
     # these it may dial, expressed by the llm-native-<vendor> role attribute
     # the orchestrator stamps on the workload identity. No host.v1 -- the
     # proxy binds these through the SDK exactly as it binds llm-proxy.
-    exists configs llm-intercept-claude-intercept-v1 || \
-      ziti edge create config llm-intercept-claude-intercept-v1 intercept.v1 \
+    exists configs llm-intercept-anthropic-intercept-v1 || \
+      ziti edge create config llm-intercept-anthropic-intercept-v1 intercept.v1 \
         '{"addresses":["api.anthropic.com"],"protocols":["tcp"],"portRanges":[{"low":443,"high":443}]}'
-    exists configs llm-intercept-codex-intercept-v1 || \
-      ziti edge create config llm-intercept-codex-intercept-v1 intercept.v1 \
+    exists configs llm-intercept-openai-intercept-v1 || \
+      ziti edge create config llm-intercept-openai-intercept-v1 intercept.v1 \
         '{"addresses":["chatgpt.com"],"protocols":["tcp"],"portRanges":[{"low":443,"high":443}]}'
-    exists services llm-intercept-claude || \
-      ziti edge create service llm-intercept-claude \
-        --configs llm-intercept-claude-intercept-v1 --role-attributes llm-intercept-services
-    exists services llm-intercept-codex || \
-      ziti edge create service llm-intercept-codex \
-        --configs llm-intercept-codex-intercept-v1 --role-attributes llm-intercept-services
+    exists services llm-intercept-anthropic || \
+      ziti edge create service llm-intercept-anthropic \
+        --configs llm-intercept-anthropic-intercept-v1 --role-attributes llm-intercept-services
+    exists services llm-intercept-openai || \
+      ziti edge create service llm-intercept-openai \
+        --configs llm-intercept-openai-intercept-v1 --role-attributes llm-intercept-services
 
     # Service policies are declared by the platform release and reconciled by
     # the provisioning controller, so they are deliberately not created here.
