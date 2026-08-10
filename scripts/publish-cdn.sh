@@ -29,15 +29,20 @@ done
 
 version="$(scripts/validate-version.sh "${version}")"
 
-bucket="${R2_BUCKET:-downloads}"
-prefix="${R2_PREFIX:-bundle-vm}"
+# shellcheck source=scripts/r2-env.sh
+. "$(dirname "$0")/r2-env.sh"
+
+bucket="${R2_BUCKET}"
+prefix="${R2_PREFIX}"
 artifact_dir="artifacts/${arch}"
 
 log() { printf '[publish-cdn] %s\n' "$*"; }
 
-for var in R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ENDPOINT_URL; do
+# Only the credentials can be missing now: the endpoint and bucket have
+# defaults, and a laptop reads the keys from an AWS profile.
+for var in R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
 	if [ -z "${!var:-}" ]; then
-		echo "missing ${var}" >&2
+		echo "missing ${var} (set it, or configure the '${R2_AWS_PROFILE:-r2}' AWS profile)" >&2
 		exit 64
 	fi
 done
