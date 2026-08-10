@@ -72,8 +72,12 @@ if [ "${publish}" = true ]; then
 	for tool in oras s5cmd; do
 		command -v "${tool}" >/dev/null 2>&1 || fail "missing ${tool} (needed to publish; pass --no-publish to skip)"
 	done
-	for var in R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ENDPOINT_URL; do
-		[ -n "${!var:-}" ] || fail "missing ${var} (needed to publish; pass --no-publish to skip)"
+	# Same resolution the upload itself does, so preflight cannot pass on a
+	# laptop and then fail in publish-cdn.sh, or the reverse.
+	# shellcheck source=scripts/r2-env.sh
+	. "$(dirname "$0")/r2-env.sh"
+	for var in R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+		[ -n "${!var:-}" ] || fail "missing ${var}: set it, or configure the '${R2_AWS_PROFILE:-r2}' AWS profile (or pass --no-publish)"
 	done
 fi
 
