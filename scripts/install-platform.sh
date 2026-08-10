@@ -9,25 +9,28 @@ set -euo pipefail
 #
 # The two ports are not the same thing:
 #
-#   INGRESS_PORT       An internal constant. OpenZiti advertises it, enrollment
-#                      JWTs embed it, the ziti VirtualServices route to it. All
-#                      of that traffic stays inside the VM (coredns-custom
-#                      rewrites point the ziti hostnames at ClusterIPs), so it
-#                      is fixed at bake time and never reconfigured.
+#   INGRESS_PORT       What OpenZiti advertises, enrollment JWTs embed, and the
+#                      ziti VirtualServices route to. It follows the host port
+#                      rather than standing as its own constant: a tunneler on
+#                      the host dials exactly the address a JWT names, so an
+#                      overlay advertising a port the host does not forward is
+#                      unreachable from the only place that enrols devices.
 #
-#   INGRESS_HOST_PORT  What the host forwards onto the ingress NodePort. Only
-#                      browser-facing URLs contain it, and a user is free to
-#                      pick any port, so the value baked here is just a default:
-#                      set-ingress-port.sh rewrites those URLs on first boot
-#                      when the host chose something else.
+#   INGRESS_HOST_PORT  What the host forwards onto the ingress NodePort, and so
+#                      the port everything else derives from. The value baked
+#                      here is a default the host is free to override:
+#                      set-ingress-port.sh moves both sets on first boot.
+#
+# They are the same number. The split above is which traffic each describes,
+# not two independently chosen ports.
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 export DEBIAN_FRONTEND=noninteractive
 
 DEPLOY_DIR=/tmp/deploy
 BASE_DOMAIN="${BASE_DOMAIN:-agyn.dev}"
-INGRESS_PORT=2496
 INGRESS_HOST_PORT="${INGRESS_HOST_PORT:-2496}"
+INGRESS_PORT="${INGRESS_HOST_PORT}"
 HELM_TIMEOUT=15m
 
 TRUST_MANAGER_VERSION=v0.22.0

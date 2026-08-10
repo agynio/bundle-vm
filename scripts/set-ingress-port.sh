@@ -4,11 +4,10 @@ set -euo pipefail
 # Points the browser-facing URLs at the port this host actually forwards.
 #
 # The image bakes a default (2496), but the host port is the user's choice —
-# 2496 may already be taken, and nothing stops them picking 2498. Almost
-# nothing in the VM cares: in-cluster traffic reaches services through cluster
-# DNS, and the OpenZiti advertised host:port is a separate internal constant
-# (see install-platform.sh). What does care is every URL a browser is handed
-# back, because the browser connects from the host:
+# 2496 may already be taken, and nothing stops them picking 2498. Most of the VM
+# does not care: in-cluster traffic reaches services through cluster DNS. What
+# cares is anything the host dials, starting with every URL a browser is handed
+# back:
 #
 #   chat-app        OIDC_REDIRECT_URI, OIDC_POST_LOGOUT_REDIRECT_URI, MEDIA_PROXY_URL
 #   media-proxy     CORS_ALLOWED_ORIGIN
@@ -30,11 +29,18 @@ set -euo pipefail
 # The realm ones cannot be re-imported: --import-realm is create-once, so they
 # are updated through the Admin API instead.
 #
+# The OpenZiti overlay moves too, for the same reason: a tunneler on the host
+# dials the address an enrolment JWT names, so an overlay advertising a port the
+# host does not forward cannot be reached from the only place devices enrol.
+# See move_ziti_port for what that drags along.
+#
 # A wrong port here fails visibly: the OIDC provider redirects to a dead port
 # after login, the browser blocks media on a CORS origin mismatch, and
 # `agyn sandbox connect` is handed a ticket for a WebSocket nobody is serving.
 #
-# Idempotent: re-running with the port already in place changes nothing.
+# Idempotent: re-running with the port already in place changes nothing. The
+# guards check every moving part rather than one, because a run that failed part
+# way is exactly the state a single check reports as done.
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
@@ -72,11 +78,54 @@ deployment_env() {
 		-o jsonpath="{.spec.template.spec.containers[0].env[?(@.name=='${2}')].value}" 2>/dev/null || true
 }
 
-# Both are checked: the chat origin alone would call it done on a VM whose apps
-# were moved but whose issuer was not, which is precisely the state that leaves
-# login broken.
+# The OpenZiti client API Service port doubles as the advertised port, so it is
+# what says whether the overlay has been moved yet.
+ziti_port() {
+	kubectl -n ziti get svc ziti-controller-client \
+		-o jsonpath='{.spec.ports[0].port}' 2>/dev/null || true
+}
+
+# Where the passthrough route sends it, which moves separately from the Service
+# and so can be left behind by a run that failed part way.
+ziti_route_port() {
+	kubectl -n istio-gateway get virtualservice ziti-controller \
+		-o jsonpath='{.spec.tls[0].route[0].destination.port.number}' 2>/dev/null || true
+}
+
+# Where the router caches the controller endpoints it last reached. Empty when
+# the PVC has not been bound or the router has never connected.
+router_endpoints_file() {
+	local claim pv path
+	claim="$(kubectl -n ziti get deploy ziti-router \
+		-o jsonpath='{.spec.template.spec.volumes[?(@.name=="config-data")].persistentVolumeClaim.claimName}' 2>/dev/null || true)"
+	[ -z "${claim}" ] && return 0
+	pv="$(kubectl -n ziti get pvc "${claim}" -o jsonpath='{.spec.volumeName}' 2>/dev/null || true)"
+	[ -z "${pv}" ] && return 0
+	path="$(kubectl get pv "${pv}" -o jsonpath='{.spec.local.path}' 2>/dev/null || true)"
+	[ -n "${path}" ] && [ -f "${path}/endpoints.yml" ] && printf '%s' "${path}/endpoints.yml"
+}
+
+# Four things move independently, so "the overlay is on this port" is only true
+# when all four say so. Checking one is how a half-moved VM reports itself done.
+ziti_settled() {
+	local cache
+	[ "$(ziti_port)" = "${PORT}" ] || return 1
+	[ "$(ziti_route_port)" = "${PORT}" ] || return 1
+	[ "$(deployment_env ziti-management ZITI_CONTROLLER_URL)" = \
+		"https://ziti-mgmt.${BASE_DOMAIN}:${PORT}/edge/management/v1" ] || return 1
+	# Settled when the cache names no port other than this one.
+	cache="$(router_endpoints_file)"
+	[ -z "${cache}" ] && return 0
+	! grep -oE "tls:ziti\.${BASE_DOMAIN}:[0-9]+" "${cache}" 2>/dev/null |
+		grep -qv ":${PORT}\$"
+}
+
+# All three are checked: any one alone would call it done on a VM that moved
+# only part way -- apps but not the issuer leaves login broken, and everything
+# but the overlay leaves a device unable to enrol.
 if [ "$(deployment_env chat-app OIDC_POST_LOGOUT_REDIRECT_URI)" = "${chat_origin}" ] &&
-	[ "$(deployment_env gateway OIDC_ISSUER_URL)" = "${issuer}" ]; then
+	[ "$(deployment_env gateway OIDC_ISSUER_URL)" = "${issuer}" ] &&
+	ziti_settled; then
 	log "already serving on port ${PORT}"
 	exit 0
 fi
@@ -142,8 +191,169 @@ update_keycloak_clients() {
 	done
 }
 
+# The overlay advertises a host:port, and a tunneler on the host dials exactly
+# what the enrolment JWT names -- so the advertised port has to be the one the
+# host forwards, not an internal constant. Moving it moves four things that have
+# to agree: the Service port (which the chart derives from advertisedPort), the
+# address the controller advertises, the router's link to it, and the port the
+# passthrough VirtualServices route to.
+#
+# Identities already enrolled carry the old address in their own ztAPI field.
+# It is a plain URL beside the client certificate rather than part of what the
+# certificate attests, so it is rewritten in place; the alternative is
+# re-enrolling, and the one-time token that would take was spent at bake time.
+move_ziti_port() {
+	local current
+	current="$(ziti_port)"
+	if [ -z "${current}" ]; then
+		log "no OpenZiti controller Service; skipping the overlay move"
+		return 0
+	fi
+	if ziti_settled; then
+		log "the overlay already advertises port ${PORT}"
+		return 0
+	fi
+
+	# Skipped when only the routes are behind, which is where a run that failed
+	# part way leaves things -- the charts are already where they should be and
+	# upgrading them again would restart the controller for nothing.
+	if [ "${current}" != "${PORT}" ]; then
+		log "moving the OpenZiti overlay from port ${current} to ${PORT}"
+		helm upgrade ziti-controller openziti/ziti-controller -n ziti --reuse-values \
+			--set "clientApi.advertisedPort=${PORT}" \
+			--set "managementApi.advertisedPort=${PORT}" --wait --timeout 5m >/dev/null
+		helm upgrade ziti-router openziti/ziti-router -n ziti --reuse-values \
+			--set "edge.advertisedPort=${PORT}" \
+			--set "ctrl.endpoint=ziti.${BASE_DOMAIN}:${PORT}" --wait --timeout 5m >/dev/null
+	fi
+
+	# The passthrough routes carry the host's traffic to those Services, so they
+	# move with the Service port or the hostname stops resolving to anything.
+	# They match on SNI and hand the connection over untouched, which puts them
+	# under tls rather than tcp.
+	local vs
+	for vs in ziti-controller ziti-controller-mgmt ziti-router; do
+		kubectl -n istio-gateway patch virtualservice "${vs}" --type=json \
+			-p "[{\"op\":\"replace\",\"path\":\"/spec/tls/0/route/0/destination/port/number\",\"value\":${PORT}}]" \
+			>/dev/null 2>&1 ||
+			log "  virtualservice ${vs} not patched; check its route shape"
+	done
+
+	# The one platform service that dials the overlay's management API by URL
+	# rather than reaching it through an identity.
+	if kubectl -n "${NAMESPACE}" get deployment ziti-management >/dev/null 2>&1; then
+		log "  re-pointing ziti-management at port ${PORT}"
+		kubectl set env "deployment/ziti-management" -n "${NAMESPACE}" \
+			"ZITI_CONTROLLER_URL=https://ziti-mgmt.${BASE_DOMAIN}:${PORT}/edge/management/v1" >/dev/null
+	fi
+
+	# The provisioning Job's script logs in by URL too. It has already run, so
+	# this changes nothing today -- but it is what a later re-run would read,
+	# and a re-run that hangs on an unreachable port is a bad way to find out.
+	if kubectl -n ziti get cm ziti-provision-script >/dev/null 2>&1; then
+		kubectl -n ziti get cm ziti-provision-script -o yaml |
+			sed "s|\(ziti-mgmt\.${BASE_DOMAIN}\):${current}|\1:${PORT}|g" |
+			kubectl apply -f - >/dev/null
+	fi
+
+	repoint_router_endpoints
+	rewrite_enrolled_identities "${current}"
+	restart_ziti_consumers
+}
+
+# Everything that dials the overlay learned the controller's address when it
+# started and holds it for the life of the process, so a moved port leaves them
+# retrying one that no longer answers -- visible as services losing their
+# terminators and staying unbound. Selected by carrying a ZITI_ variable rather
+# than by name, so a release that adds another service is covered by default.
+restart_ziti_consumers() {
+	local names
+	names="$(kubectl -n "${NAMESPACE}" get deployments -o json 2>/dev/null |
+		python3 -c '
+import json,sys
+try: items = json.load(sys.stdin)["items"]
+except Exception: sys.exit(0)
+for i in items:
+    env = [e["name"] for c in i["spec"]["template"]["spec"]["containers"] for e in (c.get("env") or [])]
+    if any(n.startswith("ZITI_") for n in env):
+        print(i["metadata"]["name"])
+' 2>/dev/null || true)"
+	[ -z "${names}" ] && return 0
+
+	# ziti-management first and on its own: it is what mints the identities the
+	# others authenticate with, so restarting them alongside it only has them
+	# retry against a service that is itself still starting.
+	if printf '%s\n' "${names}" | grep -qx ziti-management; then
+		log "  restarting ziti-management"
+		kubectl -n "${NAMESPACE}" rollout restart deployment/ziti-management >/dev/null 2>&1 || true
+		kubectl -n "${NAMESPACE}" rollout status deployment/ziti-management --timeout=180s >/dev/null 2>&1 || true
+	fi
+
+	local name
+	for name in ${names}; do
+		[ "${name}" = "ziti-management" ] && continue
+		log "  restarting ${name}"
+		kubectl -n "${NAMESPACE}" rollout restart "deployment/${name}" >/dev/null 2>&1 || true
+	done
+}
+
+# The router caches the controller endpoints it last connected to and prefers
+# that file over its config, so setting ctrl.endpoint alone leaves it dialling
+# the old port until it gives up ("unable to connect to any controllers before
+# timeout"). The file lives on its PVC, which the local-path provisioner backs
+# with a directory on this node.
+repoint_router_endpoints() {
+	local cache
+	cache="$(router_endpoints_file)"
+	[ -z "${cache}" ] && return 0
+	grep -q "tls:ziti\.${BASE_DOMAIN}:${PORT}\$" "${cache}" 2>/dev/null &&
+		! grep -oE "tls:ziti\.${BASE_DOMAIN}:[0-9]+" "${cache}" | grep -qv ":${PORT}\$" &&
+		return 0
+
+	log "  re-pointing the router's cached controller endpoints at port ${PORT}"
+	sed -i -E "s|(tls:ziti\.${BASE_DOMAIN}):[0-9]+|\1:${PORT}|g" "${cache}"
+	kubectl -n ziti rollout restart deployment/ziti-router >/dev/null 2>&1 || true
+}
+
+restart_mounters() {
+	local ns="${1}" secret="${2}" deployment
+	for deployment in $(kubectl -n "${ns}" get deployments \
+		-o jsonpath="{range .items[?(@.spec.template.spec.volumes[*].secret.secretName=='${secret}')]}{.metadata.name}{\"\n\"}{end}" 2>/dev/null); do
+		log "    restarting ${ns}/${deployment}"
+		kubectl -n "${ns}" rollout restart "deployment/${deployment}" >/dev/null 2>&1 || true
+	done
+}
+
+# Every Secret holding an enrolled identity.json, wherever it lives: the set
+# differs by which first-party apps a release ships.
+rewrite_enrolled_identities() {
+	local from="${1}" ns name payload updated
+	while read -r ns name; do
+		[ -z "${ns}" ] && continue
+		payload="$(kubectl -n "${ns}" get secret "${name}" \
+			-o jsonpath='{.data.identity\.json}' 2>/dev/null | base64 -d || true)"
+		case "${payload}" in
+		*":${from}/edge/"*) ;;
+		*) continue ;;
+		esac
+		updated="$(printf '%s' "${payload}" | sed "s|:${from}/edge/|:${PORT}/edge/|g")"
+		log "  re-pointing ${ns}/${name} at port ${PORT}"
+		kubectl -n "${ns}" patch secret "${name}" --type=json \
+			-p "[{\"op\":\"replace\",\"path\":\"/data/identity.json\",\"value\":\"$(printf '%s' "${updated}" | base64 | tr -d '\n')\"}]" \
+			>/dev/null
+		# The identity is read at start, so whoever mounts it has to restart.
+		# Found by what references the Secret rather than by name: a chart is
+		# free to prefix its release onto the Deployment and not the Secret.
+		restart_mounters "${ns}" "${name}"
+	done <<-EOF
+		$(kubectl get secrets --all-namespaces \
+			-o jsonpath='{range .items[?(@.data.identity\.json)]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null)
+	EOF
+}
+
 log "pointing browser-facing URLs at port ${PORT}"
 patch_ingress_hostport
+move_ziti_port
 
 kubectl set env deployment/chat-app -n "${NAMESPACE}" \
 	"OIDC_AUTHORITY=${issuer}" \
