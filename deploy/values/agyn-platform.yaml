@@ -55,6 +55,14 @@ platform:
     # example.com placeholder and every client would dial a host that is not
     # this VM.
     terminalProxyWebSocket: wss://terminal.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/terminal
+    # The bundle owns its own ingress, so platform.ingress.routes is empty and
+    # there is nothing for the frontends' addresses to be derived from. They
+    # also carry a port, which no derivation would have produced.
+    chat: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+    tracing: https://tracing.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+    console: https://console.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+    sandboxes: https://sandboxes.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+    mediaProxy: https://media.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
 
 # The bundled OIDC provider. externalUrl is the issuer above; the app origins
 # become the redirect URIs of one client per app.
@@ -96,9 +104,9 @@ keycloak:
 # the other -- two VirtualServices on one host merge into a route set whose order
 # is not defined between them.
 #
-# To switch: set dex.enabled true, keycloak.enabled false, and repoint the four
-# issuer URLs -- platform.oidc.issuerUrl, gateway.gateway.oidcIssuerUrl, and the
-# apps' oidcAuthority -- at https://dex.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}.
+# Dex serves auth., the hostname the issuer has always had, so switching back to
+# keycloak is dex.enabled false and keycloak.enabled true plus the realm path on
+# the issuer URLs -- the host does not move either way.
 #
 # Two accounts come from the chart's own defaults: admin/admin and user/user.
 # admin@agyn.dev is the address provisioning.clusterAdmins declares, so the
@@ -272,7 +280,6 @@ chat-app:
   oidcClientId: agyn-chat
   oidcResource: ""
   origin: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
-  mediaProxyUrl: https://media.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
 
 tracing-app:
   replicaCount: 1
