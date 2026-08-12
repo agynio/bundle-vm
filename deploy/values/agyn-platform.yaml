@@ -45,7 +45,7 @@ s3:
 # whose issuer differs from the URL it was fetched from.
 platform:
   oidc:
-    issuerUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+    issuerUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
     clientId: agyn-chat
     audience: ""
   externalUrls:
@@ -64,7 +64,7 @@ platform:
 # editing this reaches an existing VM only after the keycloak database is
 # dropped, or through the Admin API.
 keycloak:
-  enabled: true
+  enabled: false
   externalUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
   # The chart owns its own routing and cluster wiring. It has to: the bake wipes
   # deploy/ from the VM, so anything left in a manifest here is applied once at
@@ -115,11 +115,11 @@ keycloak:
 # Unlike the realm import, this config is read on every start, so editing it
 # reaches a VM that is already running.
 dex:
-  enabled: false
-  externalUrl: https://dex.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+  enabled: true
+  externalUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
   routing:
     enabled: true
-    host: dex.{{BASE_DOMAIN}}
+    host: auth.{{BASE_DOMAIN}}
   wiring:
     enabled: true
     caBundle:
@@ -143,7 +143,7 @@ gateway:
   # chart default, where leader election and spare capacity are real.
   replicaCount: 1
   gateway:
-    oidcIssuerUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+    oidcIssuerUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
     oidcClientId: agyn-chat
     oidcAudience: ""
     # The bootstrap token and the identity it resolves to come from
@@ -262,13 +262,13 @@ tracing:
 
 console-app:
   replicaCount: 1
-  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
   oidcClientId: agyn-console
   oidcResource: ""
 
 chat-app:
   replicaCount: 1
-  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
   oidcClientId: agyn-chat
   oidcResource: ""
   origin: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
@@ -276,20 +276,20 @@ chat-app:
 
 tracing-app:
   replicaCount: 1
-  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
   oidcClientId: agyn-tracing
   oidcResource: ""
 
 sandboxes-app:
   replicaCount: 1
-  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+  oidcAuthority: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
   oidcClientId: agyn-sandboxes
   oidcResource: ""
 
 media-proxy:
   replicaCount: 1
   mediaProxy:
-    oidcIssuerUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}/realms/agyn
+    oidcIssuerUrl: https://auth.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
     oidcClientId: agyn-chat
     oidcAudience: ""
     corsAllowedOrigin: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
