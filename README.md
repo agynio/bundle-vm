@@ -154,8 +154,9 @@ secret).
 Sign in with **`admin` / `admin`**. Authentication is the Keycloak the umbrella
 bundles, served at `https://auth.agyn.dev:2496`, with a realm imported from the
 chart: one client per app (`agyn-console`, `agyn-chat`, `agyn-tracing`,
-`agyn-sandboxes`) and a single user, `admin@agyn.dev`. That address is also
-`users.FIRST_ADMIN_EMAIL`, so the first sign-in takes cluster admin.
+`agyn-sandboxes`) and a single user, `admin@agyn.dev`. That address is the one
+`provisioning.clusterAdmins` declares, so the controller grants it cluster admin
+once the account exists. Nobody takes the role for signing in first.
 
 The realm is imported only when it does not already exist — Keycloak's
 `--import-realm` is create-once and the strategy cannot be overridden — so

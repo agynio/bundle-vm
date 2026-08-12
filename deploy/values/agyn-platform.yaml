@@ -91,6 +91,52 @@ keycloak:
     tracing: https://tracing.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
     sandboxes: https://sandboxes.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
 
+# The same provider in a fraction of the image and the memory, pre-wired and off.
+# Its own hostname, so both can be enabled while an install is moved from one to
+# the other -- two VirtualServices on one host merge into a route set whose order
+# is not defined between them.
+#
+# To switch: set dex.enabled true, keycloak.enabled false, and repoint the four
+# issuer URLs -- platform.oidc.issuerUrl, gateway.gateway.oidcIssuerUrl, and the
+# apps' oidcAuthority -- at https://dex.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}.
+#
+# Two accounts come from the chart's own defaults: admin/admin and user/user.
+# admin@agyn.dev is the address provisioning.clusterAdmins declares, so the
+# controller grants it cluster admin once the account exists; the second has no
+# role and belongs to no organization, so the bundle can be looked at as an
+# ordinary member.
+#
+# Both accept the bare username, even though the form says "Email Address" --
+# that string is a literal in Dex with no config path. The FIRST sign-in for each
+# account has to use the address: an alias is its own entry's email field, so
+# provisioning through one stores `admin` as the email, and the ClusterAdmin
+# declaration for admin@agyn.dev then has nothing to resolve to.
+#
+# Unlike the realm import, this config is read on every start, so editing it
+# reaches a VM that is already running.
+dex:
+  enabled: false
+  externalUrl: https://dex.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+  routing:
+    enabled: true
+    host: dex.{{BASE_DOMAIN}}
+  wiring:
+    enabled: true
+    caBundle:
+      enabled: true
+    corednsRewrite:
+      enabled: true
+    ingressHostPort:
+      enabled: true
+      port: {{INGRESS_HOST_PORT}}
+    gatewayHost:
+      enabled: true
+  appOrigins:
+    console: https://console.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+    chat: https://chat.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+    tracing: https://tracing.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+    sandboxes: https://sandboxes.{{BASE_DOMAIN}}:{{INGRESS_HOST_PORT}}
+
 gateway:
   # One replica: this is a single-node VM, so a second buys no failover — it
   # only competes for the same CPU and memory. Production installs keep the
