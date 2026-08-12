@@ -108,17 +108,18 @@ keycloak:
 # keycloak is dex.enabled false and keycloak.enabled true plus the realm path on
 # the issuer URLs -- the host does not move either way.
 #
-# Two accounts come from the chart's own defaults: admin/admin and user/user.
+# Two accounts come from the chart's own defaults: admin@agyn.dev and
+# user@agyn.dev, both with the password matching the local part.
 # admin@agyn.dev is the address provisioning.clusterAdmins declares, so the
 # controller grants it cluster admin once the account exists; the second has no
 # role and belongs to no organization, so the bundle can be looked at as an
 # ordinary member.
 #
-# Both accept the bare username, even though the form says "Email Address" --
-# that string is a literal in Dex with no config path. The FIRST sign-in for each
-# account has to use the address: an alias is its own entry's email field, so
-# provisioning through one stores `admin` as the email, and the ClusterAdmin
-# declaration for admin@agyn.dev then has nothing to resolve to.
+# Sign in with the address, not `admin` -- the form says "Email Address" and
+# means it. Dex has no second identifier, and a bare username cannot be made an
+# alias for one: an entry's email field is its lookup key, so an entry keyed
+# `admin` is an account whose email is `admin`, which is the address
+# provisioning.clusterAdmins would then fail to match.
 #
 # Unlike the realm import, this config is read on every start, so editing it
 # reaches a VM that is already running.
