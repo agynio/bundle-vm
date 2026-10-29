@@ -105,14 +105,18 @@ router_endpoints_file() {
 	[ -n "${path}" ] && [ -f "${path}/endpoints.yml" ] && printf '%s' "${path}/endpoints.yml"
 }
 
-# Four things move independently, so "the overlay is on this port" is only true
-# when all four say so. Checking one is how a half-moved VM reports itself done.
+# Five things move independently, so "the overlay is on this port" is only true
+# when all five say so. Checking one is how a half-moved VM reports itself done.
 ziti_settled() {
 	local cache
 	[ "$(ziti_port)" = "${PORT}" ] || return 1
 	[ "$(ziti_route_port)" = "${PORT}" ] || return 1
 	[ "$(deployment_env ziti-management ZITI_CONTROLLER_URL)" = \
 		"https://ziti-mgmt.${BASE_DOMAIN}:${PORT}/edge/management/v1" ] || return 1
+	# The Orchestrator writes both into every workload's enrolment, so either one
+	# left behind sends a workload to the old port.
+	[ "$(deployment_env agents-orchestrator ZITI_ENROLLMENT_CONTROLLER_PORT)" = "${PORT}" ] || return 1
+	[ "$(deployment_env agents-orchestrator ZITI_RUNTIME_CONTROLLER_PORT)" = "${PORT}" ] || return 1
 	# Settled when the cache names no port other than this one.
 	cache="$(router_endpoints_file)"
 	[ -z "${cache}" ] && return 0
@@ -122,7 +126,7 @@ ziti_settled() {
 
 # All three are checked: any one alone would call it done on a VM that moved
 # only part way -- apps but not the issuer leaves login broken, and everything
-# but the overlay leaves a device unable to enrol.
+# but the overlay leaves a device, or a workload, unable to enrol.
 if [ "$(deployment_env chat-app OIDC_POST_LOGOUT_REDIRECT_URI)" = "${chat_origin}" ] &&
 	[ "$(deployment_env gateway OIDC_ISSUER_URL)" = "${issuer}" ] &&
 	ziti_settled; then
@@ -245,6 +249,17 @@ move_ziti_port() {
 		log "  re-pointing ziti-management at port ${PORT}"
 		kubectl set env "deployment/ziti-management" -n "${NAMESPACE}" \
 			"ZITI_CONTROLLER_URL=https://ziti-mgmt.${BASE_DOMAIN}:${PORT}/edge/management/v1" >/dev/null
+	fi
+
+	# The Orchestrator writes the controller's port into every workload's
+	# enrolment, and takes it from its own environment, not from the overlay. It
+	# still holds the chart's default after the overlay has moved, so a workload
+	# dials a port nothing serves any more and never gets an identity.
+	if kubectl -n "${NAMESPACE}" get deployment agents-orchestrator >/dev/null 2>&1; then
+		log "  re-pointing agents-orchestrator at port ${PORT}"
+		kubectl set env "deployment/agents-orchestrator" -n "${NAMESPACE}" \
+			"ZITI_ENROLLMENT_CONTROLLER_PORT=${PORT}" \
+			"ZITI_RUNTIME_CONTROLLER_PORT=${PORT}" >/dev/null
 	fi
 
 	# The provisioning Job's script logs in by URL too. It has already run, so
