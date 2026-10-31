@@ -56,10 +56,12 @@ It is one URL — `https://auth.agyn.dev:<INGRESS_HOST_PORT>/realms/agyn` — us
 both by the browser and, server-side, by the Gateway and Media Proxy, which
 fetch discovery, JWKS and userinfo from it; zitadel/oidc rejects a discovery
 document whose issuer differs from the URL it was fetched from, so the two
-sides cannot name different ports. `install-ingress.sh` therefore gives the
-`istio-ingressgateway` Service a second port equal to `INGRESS_HOST_PORT`,
-targeting the same container port 443, and `set-ingress-port.sh` moves it when
-the host picks another port.
+sides cannot name different ports. The bundled provider's chart therefore gives
+the `istio-ingressgateway` Service a second port equal to `INGRESS_HOST_PORT`
+(its `wiring.ingressHostPort`), targeting the same container port 443, and
+`set-ingress-port.sh` moves it when the host picks another port. The chart
+publishes it again on every upgrade, from the values the image was baked with,
+so `upgrade-platform.sh` reads the port before upgrading and puts it back after.
 
 ## Deploy layout
 
