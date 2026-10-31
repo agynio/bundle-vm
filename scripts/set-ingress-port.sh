@@ -124,11 +124,25 @@ ziti_settled() {
 		grep -qv ":${PORT}\$"
 }
 
-# All three are checked: any one alone would call it done on a VM that moved
-# only part way -- apps but not the issuer leaves login broken, and everything
-# but the overlay leaves a device, or a workload, unable to enrol.
+# The issuer's port on the ingress Service. The OIDC provider's chart publishes
+# that port as well, from the release's values, so a chart upgrade moves it back
+# to the port the image was baked with -- whether or not the upgrade got as far
+# as the Deployments.
+ingress_settled() {
+	case "${PORT}" in
+	443 | 80 | 15021) return 0 ;;
+	esac
+	[ "$(kubectl -n istio-gateway get svc istio-ingressgateway \
+		-o jsonpath='{.spec.ports[?(@.name=="https-hostport")].port}' 2>/dev/null || true)" = "${PORT}" ]
+}
+
+# All four are checked: any one alone would call it done on a VM that moved
+# only part way -- apps but not the issuer leaves login broken, the issuer but
+# not the port it is served on leaves the Gateway unable to fetch it, and
+# everything but the overlay leaves a device, or a workload, unable to enrol.
 if [ "$(deployment_env chat-app OIDC_POST_LOGOUT_REDIRECT_URI)" = "${chat_origin}" ] &&
 	[ "$(deployment_env gateway OIDC_ISSUER_URL)" = "${issuer}" ] &&
+	ingress_settled &&
 	ziti_settled; then
 	log "already serving on port ${PORT}"
 	exit 0
