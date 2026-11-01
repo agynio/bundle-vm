@@ -37,6 +37,19 @@ s3:
 # openfga, minio and nats are on by default in the chart now, and openfga-db was
 # never one of its dependencies -- the block enabled nothing.
 
+# MinIO stopped publishing images: quay.io/minio and Docker Hub's minio refuse
+# anonymous pulls, and the chart baked here still defaults to them, so the bake
+# waited on a pod that could never start. These are the same release tags,
+# rebuilt from upstream source in agynio/minio-images. Set here, they are
+# release values, so an upgrade keeps them too.
+minio:
+  image:
+    repository: ghcr.io/agynio/minio
+    tag: RELEASE.2024-12-18T13-15-44Z
+  mcImage:
+    repository: ghcr.io/agynio/mc
+    tag: RELEASE.2024-11-21T17-21-54Z
+
 # OIDC: the umbrella's bundled Keycloak, reached on the same host:port the
 # browser uses. coredns-custom points auth.{{BASE_DOMAIN}} at the ingress and
 # install-ingress.sh gives that Service the host port, so this one URL resolves
