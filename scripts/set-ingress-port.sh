@@ -148,6 +148,33 @@ if [ "$(deployment_env chat-app OIDC_POST_LOGOUT_REDIRECT_URI)" = "${chat_origin
 	exit 0
 fi
 
+# A Recreate Deployment scales up only once its old pods are gone. If one is still
+# terminating when the deployment controller looks, what wakes it is its
+# pod-delete handler, which re-queues a Deployment only when none of its
+# ReplicaSets has a pod left -- and dead pods count. Nothing clears them: the
+# kubelet leaves one behind, Succeeded or Failed, for every pod it evicts, and k3s
+# collects them only past 12500. So one dead pod can leave the Deployment with no
+# live pod until its 600s progress deadline comes round, and everything that needs
+# ziti-management restarts with it down.
+#
+# ziti-controller, ziti-router, ziti-management and networks are Recreate. Every
+# namespace rather than theirs because the identities below can be mounted
+# anywhere, and a dead pod is no use to anyone. Job pods stay: they hold the hook
+# and migration logs. Not fatal: a pod that survives only risks that stall, and
+# stopping here would be no better.
+delete_dead_replicaset_pods() {
+	local phase namespace pod
+	for phase in Failed Succeeded; do
+		while read -r namespace pod; do
+			log "deleting dead pod ${namespace}/${pod}"
+			kubectl -n "${namespace}" delete pod "${pod}" --wait=false >/dev/null 2>&1 ||
+				log "  not deleted; its Deployment's next rollout may stall"
+		done < <(kubectl get pods --all-namespaces --field-selector "status.phase=${phase}" --no-headers \
+			-o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,OWNER:.metadata.ownerReferences[0].kind' 2>/dev/null |
+			awk '$3 == "ReplicaSet" { print $1, $2 }')
+	done
+}
+
 # The Service port in-cluster clients dial for the issuer. 443, 80 and 15021 are
 # already published by this Service, so a separate entry would be a duplicate.
 patch_ingress_hostport() {
@@ -381,6 +408,7 @@ rewrite_enrolled_identities() {
 }
 
 log "pointing browser-facing URLs at port ${PORT}"
+delete_dead_replicaset_pods
 patch_ingress_hostport
 move_ziti_port
 

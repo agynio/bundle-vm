@@ -31,7 +31,7 @@ The build then:
    release),
 4. `scripts/prepull-and-wait.sh` — waits until every pod/Deployment/StatefulSet
    converges, which also means every image is in the k3s containerd store,
-5. `scripts/cleanup-image.sh` — sweeps job pods, prunes unused images, strips
+5. `scripts/cleanup-image.sh` — sweeps dead pods, prunes unused images, strips
    the containerd content-store layer blobs, stops k3s, zero-fills free space,
    and finalizes to a clean disk.
 
