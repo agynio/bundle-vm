@@ -10,15 +10,19 @@ export DEBIAN_FRONTEND=noninteractive
 
 rm -rf /tmp/deploy /tmp/* /var/tmp/* 2>/dev/null || true
 
+# Nothing dead ships: one dead pod under a Recreate Deployment can hold back its
+# next rollout on every VM made from this image (delete_dead_replicaset_pods in
+# set-ingress-port.sh says how), so a sweep that fails fails the build.
+
 # Sweep failed pods left behind by migration Jobs that retried while their
 # dependencies were still starting (the Jobs themselves completed).
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-kubectl delete pods -A --field-selector status.phase=Failed 2>/dev/null || true
+kubectl delete pods -A --field-selector status.phase=Failed
 
 # Drop completed one-shot Job pods (stream config, ziti provisioning,
 # migrations) so their images become unreferenced, then prune every image no
 # container uses anymore (nats-box, ...).
-kubectl delete pods -A --field-selector status.phase=Succeeded 2>/dev/null || true
+kubectl delete pods -A --field-selector status.phase=Succeeded
 k3s crictl rmi --prune 2>/dev/null || true
 
 # Drop compressed layer blobs from the containerd content store. Pods run from

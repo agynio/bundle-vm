@@ -185,6 +185,24 @@ wait_for_rollout() {
 	done <<<"${workloads}"
 }
 
+# One dead pod can hold back a Recreate Deployment's rollout for its 600s progress
+# deadline: delete_dead_replicaset_pods in set-ingress-port.sh says how. Swept
+# here too because the upgrade rolls those Deployments before that script runs,
+# and on the default port that script stops at "already serving" before its own
+# sweep.
+delete_dead_replicaset_pods() {
+	local phase namespace pod
+	for phase in Failed Succeeded; do
+		while read -r namespace pod; do
+			log "deleting dead pod ${namespace}/${pod}"
+			kubectl -n "${namespace}" delete pod "${pod}" --wait=false >/dev/null 2>&1 ||
+				log "  not deleted; its Deployment's next rollout may stall"
+		done < <(kubectl get pods --all-namespaces --field-selector "status.phase=${phase}" --no-headers \
+			-o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,OWNER:.metadata.ownerReferences[0].kind' 2>/dev/null |
+			awk '$3 == "ReplicaSet" { print $1, $2 }')
+	done
+}
+
 # The runner and the apps used to be their own release, and Helm refuses to
 # adopt resources another release owns. A VM built before the fold still has
 # agyn-apps, so it goes first -- otherwise the upgrade fails on the k8s-runner
@@ -204,6 +222,8 @@ fi
 # forwards.
 host_port="$(kubectl -n istio-gateway get svc istio-ingressgateway \
 	-o jsonpath='{.spec.ports[?(@.name=="https-hostport")].port}' 2>/dev/null || true)"
+
+delete_dead_replicaset_pods
 
 # One release. The runner and the apps ship inside the umbrella, so there is no
 # second chart to keep in step with it.
